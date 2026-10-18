@@ -47,7 +47,7 @@ struct EntryDetailView: View {
 
     private func refreshDraft() {
         guard let entry else { return }
-        if let extraction = entry.extraction { draft = extraction }
+        draft = model.reviewDraft(for: entry)
         image = NSImage(contentsOf: model.imageURL(for: entry))
     }
 
@@ -90,6 +90,10 @@ struct EntryDetailView: View {
                 HStack(spacing: 13) {
                     field("金额", text: optional(\.amount))
                     field("币种（如 CNY、USD）", text: Binding(get: { draft.currency ?? "" }, set: { draft.currency = $0.isEmpty ? nil : $0.uppercased() }))
+                }
+                if model.needsCurrencyDefault(for: entry), draft.currency == AppModel.defaultReviewCurrency {
+                    Text("币种未识别，已按人民币（CNY）预填，可修改。")
+                        .font(.system(size: 10)).foregroundStyle(Palette.secondary)
                 }
                 HStack(spacing: 13) {
                     field("交易日期 YYYY-MM-DD", text: optional(\.transactionDate))
@@ -225,14 +229,15 @@ struct EntryDetailView: View {
 
     private func processingState(_ entry: LedgerEntry) -> some View {
         VStack(alignment: .leading, spacing: 19) {
-            Label(entry.state.label, systemImage: entry.state == .failed ? "exclamationmark.bubble" : "sparkles")
+            Label(model.queuePaused ? "识别已暂停" : entry.state.label, systemImage: entry.state == .failed ? "exclamationmark.bubble" : "sparkles")
                 .font(.system(size: 18, weight: .medium))
-            if entry.state == .processing { ProgressView(); Text(model.activity ?? "正在识别账单…").font(.system(size: 12)) }
+            if entry.state == .processing && !model.queuePaused { ProgressView(); Text(model.activity ?? "正在识别账单…").font(.system(size: 12)) }
+            if model.queuePaused, let banner = model.banner { Text(banner).font(.system(size: 12)).lineSpacing(6) }
             if let error = entry.error { Text(error).font(.system(size: 12)).lineSpacing(6).textSelection(.enabled) }
             Text("原图已保存在本机，可稍后重新识别。")
                 .font(.system(size: 11)).foregroundStyle(Palette.secondary).lineSpacing(5)
-            if entry.state != .processing {
-                Button(entry.state == .failed ? "重新识别" : "开始识别") { dismiss(); model.retry(entry) }
+            if entry.state != .processing || model.queuePaused {
+                Button(model.queuePaused ? "存储恢复后重试" : (entry.state == .failed ? "重新识别" : "开始识别")) { dismiss(); model.retry(entry) }
                     .buttonStyle(PrimaryButtonStyle())
             }
         }.frame(maxWidth: .infinity, alignment: .leading)

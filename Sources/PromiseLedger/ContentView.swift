@@ -289,7 +289,12 @@ struct ContentView: View {
             Image(systemName: "info.circle").padding(.top, 1)
             Text(message).font(.system(size: 11)).lineSpacing(4).textSelection(.enabled)
             Spacer()
-            Button { model.banner = nil } label: { Image(systemName: "xmark").font(.system(size: 10)) }.buttonStyle(.plain)
+            if !model.initialized {
+                Button(model.isInitializing ? "初始化中…" : "重试初始化") { Task { await model.initialize() } }
+                    .disabled(model.isInitializing)
+            } else {
+                Button { model.banner = nil } label: { Image(systemName: "xmark").font(.system(size: 10)) }.buttonStyle(.plain)
+            }
         }.foregroundStyle(Palette.amber).padding(14).background(Palette.amber.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
     }
 
