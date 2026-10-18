@@ -1,0 +1,21 @@
+docs/manual-import-handoff.md
+  s_cb8e6971025af1::t_2f10ed5cd285fb 1-161
+README.md
+  s_cb8e6971025af1::t_db26573e3b92a7 21-28,105,126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "899e612bca3fad0437956340e75be45ddefbdd54",
+  "prompts": {},
+  "sessions": {
+    "s_cb8e6971025af1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14dda-474b-7b91-b9ea-25091afa4443",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "zhengxiaodong <zhengxiaodong@xiaohongshu.com>"
+    }
+  }
+}
