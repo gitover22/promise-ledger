@@ -11,16 +11,27 @@ public struct PreparedImage: Sendable {
 }
 
 public enum ImagePipeline {
+    public static let supportedContentTypes: [UTType] = [.png, .jpeg, .heic, .tiff]
+
     public static func prepare(url: URL, imagesDirectory: URL) throws -> PreparedImage {
+        guard url.isFileURL else { throw LedgerError.message("请拖入本机图片文件。") }
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        let values = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
-        guard values.isRegularFile == true, let size = values.fileSize, size > 0, size <= 40 * 1_024 * 1_024 else {
-            throw LedgerError.message("请选择小于 40 MB 的 PNG、JPEG、HEIC 或 TIFF 图片。")
-        }
+        var freshURL = url
+        freshURL.removeAllCachedResourceValues()
+        let values = try freshURL.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+        guard values.isRegularFile == true else { throw LedgerError.message("不能导入文件夹，请选择其中的图片。") }
+        guard let size = values.fileSize, size > 0 else { throw LedgerError.message("文件为空，请重新导出图片。") }
+        guard size <= 40 * 1_024 * 1_024 else { throw LedgerError.message("图片超过 40 MB，请缩小后重新导入。") }
         let data = try Data(contentsOf: url, options: .mappedIfSafe)
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let identifier = CGImageSourceGetType(source), let type = UTType(identifier as String) else {
+            throw LedgerError.message("文件不是可读取的图片，可能已损坏，请重新导出。")
+        }
+        guard supportedContentTypes.contains(where: { type.conforms(to: $0) }) else {
+            throw LedgerError.message("不支持该图片格式，请使用 PNG、JPEG、HEIC 或 TIFF。")
+        }
+        guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = properties[kCGImagePropertyPixelWidth] as? Int,
               let height = properties[kCGImagePropertyPixelHeight] as? Int,
               width > 0, height > 0, Double(width) * Double(height) <= 100_000_000,

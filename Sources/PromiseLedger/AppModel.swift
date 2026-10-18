@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import UniformTypeIdentifiers
 import LedgerCore
@@ -35,7 +36,9 @@ enum LedgerSection: String, CaseIterable, Identifiable {
     @Published var modelName = "未配置"
     @Published var capturePermission = ScreenCaptureService.hasPermission
     @Published var isCapturing = false
-    @Published var isImporting = false
+    let importBatch = ImportBatch()
+    var isImporting: Bool { importBatch.isImporting }
+    private var importSubscription: AnyCancellable?
     @Published private(set) var initialized = false
     let dataRoot: URL
     let isPreview: Bool
@@ -52,6 +55,7 @@ enum LedgerSection: String, CaseIterable, Identifiable {
         self.isPreview = isPreview
         self.reminderOnOpen = isPreview || defaults.object(forKey: "reminders.showOnOpen.v1") == nil
             ? true : defaults.bool(forKey: "reminders.showOnOpen.v1")
+        importSubscription = importBatch.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
     }
 
     var consentGranted: Bool { isPreview ? previewConsent : defaults.bool(forKey: "aiTextConsent.v1") }
@@ -147,33 +151,34 @@ enum LedgerSection: String, CaseIterable, Identifiable {
     }
 
     func chooseImages() {
-        guard !isImporting else { return }
+        guard !isImporting else { banner = "上一批文件仍在导入，请等待完成后再选择图片。"; return }
         let panel = NSOpenPanel()
         panel.title = "导入订单图片"
-        panel.message = "支持手机订单截图、电子收据及账单图片，每张不超过 40 MB。"
-        panel.allowedContentTypes = [.png, .jpeg, .heic, .tiff]
+        panel.message = "每次最多 10 张，每张不超过 40 MB。支持 PNG、JPEG、HEIC 和 TIFF。"
+        panel.allowedContentTypes = ImagePipeline.supportedContentTypes
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         if panel.runModal() == .OK { importImages(panel.urls) }
     }
 
     func importImages(_ urls: [URL]) {
-        guard !isImporting, let database else { return }
-        guard urls.count <= 10 else { banner = "每次最多导入 10 张图片，模型会按顺序识别。"; return }
-        isImporting = true
-        Task {
-            defer { isImporting = false }
+        importCandidates(urls.map(ImportCandidate.file))
+    }
+
+    @discardableResult func importCandidates(_ candidates: [ImportCandidate]) -> Bool {
+        guard let database else { banner = "账本尚未就绪，请稍后重试。"; return false }
+        return importBatch.start(candidates, importFile: { [self] url in
             let images = await database.imagesDirectory
-            for url in urls {
-                do {
-                    let prepared = try await Task.detached(priority: .userInitiated) {
-                        try ImagePipeline.prepare(url: url, imagesDirectory: images)
-                    }.value
-                    try await enqueue(prepared, source: .image)
-                } catch { banner = error.localizedDescription }
-            }
-            startOrRequestConsent()
-        }
+            let prepared = try await Task.detached(priority: .userInitiated) {
+                try ImagePipeline.prepare(url: url, imagesDirectory: images)
+            }.value
+            return try await enqueue(prepared, source: .image)
+        }, completion: { [weak self] in self?.startOrRequestConsent() })
+    }
+
+    func showImportedEntry(_ id: String) {
+        selection = canonicalEntry(for: id)?.id ?? id
+        requestedDetailID = selection
     }
 
     func captureScreen() {
@@ -187,25 +192,29 @@ enum LedgerSection: String, CaseIterable, Identifiable {
                 let prepared = try await Task.detached(priority: .userInitiated) {
                     try ImagePipeline.prepare(image: image, imagesDirectory: images)
                 }.value
-                try await enqueue(prepared, source: .screenshot)
+                _ = try await enqueue(prepared, source: .screenshot)
                 startOrRequestConsent()
             } catch { banner = error.localizedDescription; openWindow?() }
         }
     }
 
-    private func enqueue(_ image: PreparedImage, source: EntrySource) async throws {
-        guard let database else { return }
+    private func enqueue(_ image: PreparedImage, source: EntrySource) async throws -> ImportOutcome {
+        guard let database else { throw LedgerError.message("账本尚未就绪，请稍后重试。") }
         if let existing = entries.first(where: { $0.imageHash == image.hash }) {
-            selection = existing.duplicateOf ?? existing.id
-            if ![.queued, .processing].contains(existing.state) { requestedDetailID = selection }
-            banner = "这张图片已经在账本里，已为你打开原记录。"
-            openWindow?()
-            return
+            let id = canonicalEntry(for: existing.id)?.id ?? existing.id
+            if source == .screenshot {
+                selection = id
+                if ![.queued, .processing].contains(existing.state) { requestedDetailID = id }
+                banner = "这张图片已经在账本里，已为你打开原记录。"
+                openWindow?()
+            }
+            return .duplicate(entryID: id)
         }
         let entry = LedgerEntry(source: source, imageFilename: image.filename, imageHash: image.hash)
         try await database.save(entry)
         try await reload()
         selection = entry.id
+        return .imported(entryID: entry.id)
     }
 
     func grantConsent() {
