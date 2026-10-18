@@ -25,15 +25,17 @@ public struct ImportItem: Identifiable {
 
 public struct ImportCandidate {
     public let name: String
+    public let expectedContentHash: String?
     let loadURL: @MainActor () async throws -> URL
 
-    public init(name: String, loadURL: @escaping @MainActor () async throws -> URL) {
+    public init(name: String, expectedContentHash: String? = nil, loadURL: @escaping @MainActor () async throws -> URL) {
         self.name = name
+        self.expectedContentHash = expectedContentHash
         self.loadURL = loadURL
     }
 
-    public static func file(_ url: URL) -> ImportCandidate {
-        ImportCandidate(name: url.lastPathComponent) { url }
+    public static func file(_ url: URL, expectedContentHash: String? = nil) -> ImportCandidate {
+        ImportCandidate(name: url.lastPathComponent, expectedContentHash: expectedContentHash) { url }
     }
 }
 
@@ -47,7 +49,7 @@ public struct ImportCandidate {
 
     @discardableResult public func start(
         _ candidates: [ImportCandidate],
-        importFile: @escaping (URL) async throws -> ImportOutcome,
+        importFile: @escaping (URL, String?) async throws -> ImportOutcome,
         completion: @escaping () -> Void = {}
     ) -> Bool {
         guard !isImporting else {
@@ -69,7 +71,7 @@ public struct ImportCandidate {
                     let url = try await candidate.loadURL()
                     if !url.lastPathComponent.isEmpty { items[index].name = url.lastPathComponent }
                     items[index].status = .importing
-                    switch try await importFile(url) {
+                    switch try await importFile(url, candidate.expectedContentHash) {
                     case .imported(let id): items[index].status = .imported(entryID: id)
                     case .duplicate(let id): items[index].status = .duplicate(entryID: id)
                     }

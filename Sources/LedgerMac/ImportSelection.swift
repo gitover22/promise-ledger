@@ -77,8 +77,8 @@ public struct ImportSelectionItem: Identifiable {
     public func confirm() -> [ImportCandidate] {
         guard isPresented, !isChecking, readyCount > 0 else { return [] }
         let candidates = rows.compactMap { row -> ImportCandidate? in
-            guard row.preview != nil, row.error == nil, let url = row.url else { return nil }
-            return .file(url)
+            guard let preview = row.preview, row.error == nil, let url = row.url else { return nil }
+            return .file(url, expectedContentHash: preview.contentHash)
         }
         cancel()
         return candidates

@@ -165,7 +165,7 @@ enum LedgerSection: String, CaseIterable, Identifiable {
     }
 
     func importImages(_ urls: [URL]) {
-        importCandidates(urls.map(ImportCandidate.file))
+        importCandidates(urls.map { ImportCandidate.file($0) })
     }
 
     @discardableResult func importCandidates(_ candidates: [ImportCandidate]) -> Bool {
@@ -178,10 +178,10 @@ enum LedgerSection: String, CaseIterable, Identifiable {
         guard !isImporting, let database else { banner = "账本正在忙碌，请稍后重试。"; return }
         let candidates = importSelection.confirm()
         guard !candidates.isEmpty else { return }
-        importBatch.start(candidates, importFile: { [self] url in
+        importBatch.start(candidates, importFile: { [self] url, expectedContentHash in
             let images = await database.imagesDirectory
             let prepared = try await Task.detached(priority: .userInitiated) {
-                try ImagePipeline.prepare(url: url, imagesDirectory: images)
+                try ImagePipeline.prepare(url: url, imagesDirectory: images, expectedContentHash: expectedContentHash)
             }.value
             return try await enqueue(prepared, source: .image)
         }, completion: { [weak self] in self?.startOrRequestConsent() })

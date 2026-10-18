@@ -13,13 +13,14 @@ public struct PreparedImage: Sendable {
 public struct ImagePreview: Sendable {
     public let image: CGImage
     public let byteCount: Int
+    public let contentHash: String
 }
 
 public enum ImagePipeline {
     public static let supportedContentTypes: [UTType] = [.png, .jpeg, .heic, .tiff]
 
-    public static func prepare(url: URL, imagesDirectory: URL) throws -> PreparedImage {
-        let decoded = try decode(url: url, maxPixelSize: 4_096)
+    public static func prepare(url: URL, imagesDirectory: URL, expectedContentHash: String? = nil) throws -> PreparedImage {
+        let decoded = try decode(url: url, maxPixelSize: 4_096, expectedContentHash: expectedContentHash)
         return try prepare(image: decoded.image, imagesDirectory: imagesDirectory)
     }
 
@@ -28,18 +29,28 @@ public enum ImagePipeline {
         try decode(url: url, maxPixelSize: 512)
     }
 
-    private static func decode(url: URL, maxPixelSize: Int) throws -> ImagePreview {
+    private static func decode(url: URL, maxPixelSize: Int, expectedContentHash: String? = nil) throws -> ImagePreview {
         guard url.isFileURL else { throw LedgerError.message("请拖入本机图片文件。") }
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         var freshURL = url
         freshURL.removeAllCachedResourceValues()
-        let values = try freshURL.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
-        guard values.isRegularFile == true else { throw LedgerError.message("不能导入文件夹，请选择其中的图片。") }
-        guard let size = values.fileSize, size > 0 else { throw LedgerError.message("文件为空，请重新导出图片。") }
-        guard size <= 40 * 1_024 * 1_024 else { throw LedgerError.message("图片超过 40 MB，请缩小后重新导入。") }
-        let data = try Data(contentsOf: url, options: .mappedIfSafe)
+        let data: Data
+        do {
+            let values = try freshURL.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+            guard values.isRegularFile == true else { throw LedgerError.message("不能导入文件夹，请选择其中的图片。") }
+            guard let size = values.fileSize, size > 0 else { throw LedgerError.message("文件为空，请重新导出图片。") }
+            guard size <= 40 * 1_024 * 1_024 else { throw LedgerError.message("图片超过 40 MB，请缩小后重新导入。") }
+            // Own the bytes: hashing and decoding must use the same snapshot, even if the source changes.
+            data = try Data(contentsOf: url)
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+            throw LedgerError.message("图片文件已不存在，可能已被删除或移动，请重新选择并确认后导入。")
+        }
         guard data.count <= 40 * 1_024 * 1_024 else { throw LedgerError.message("图片超过 40 MB，请缩小后重新导入。") }
+        let contentHash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        if let expectedContentHash, contentHash != expectedContentHash {
+            throw LedgerError.message("图片内容已变化，请重新选择并确认后导入。")
+        }
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let identifier = CGImageSourceGetType(source), let type = UTType(identifier as String) else {
             throw LedgerError.message("文件不是可读取的图片，可能已损坏，请重新导出。")
@@ -58,7 +69,7 @@ public enum ImagePipeline {
               ] as CFDictionary) else {
             throw LedgerError.message("图片无法解码或尺寸过大，请换一张清晰的订单截图。")
         }
-        return ImagePreview(image: image, byteCount: data.count)
+        return ImagePreview(image: image, byteCount: data.count, contentHash: contentHash)
     }
 
     public static func prepare(image: CGImage, imagesDirectory: URL) throws -> PreparedImage {

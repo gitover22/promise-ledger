@@ -22,6 +22,7 @@ struct Failure: LocalizedError {
 
     static func main() async {
         do {
+            try await changedFilesAfterPreview()
             try await mixedBatch()
             try await limitsAndBusy()
             try imageValidation()
@@ -38,7 +39,7 @@ struct Failure: LocalizedError {
         let unreadable = ImportCandidate(name: "拖入项目 5") { throw Failure("文件地址无法读取") }
         var visited: [String] = []
         var completions = 0
-        try expect(batch.start(files + [unreadable], importFile: { url in
+        try expect(batch.start(files + [unreadable], importFile: { url, _ in
             visited.append(url.lastPathComponent)
             switch url.lastPathComponent {
             case "duplicate.png": return .duplicate(entryID: "existing")
@@ -57,7 +58,7 @@ struct Failure: LocalizedError {
         let batch = ImportBatch()
         let file = ImportCandidate.file(URL(fileURLWithPath: "/synthetic/order.png"))
         var calls = 0
-        let importer: (URL) async throws -> ImportOutcome = { _ in calls += 1; return .imported(entryID: "one") }
+        let importer: (URL, String?) async throws -> ImportOutcome = { _, _ in calls += 1; return .imported(entryID: "one") }
         try expect(!batch.start(Array(repeating: file, count: 11), importFile: importer), "11 files must reject the whole batch")
         try expect(calls == 0 && batch.notice != nil && batch.items.isEmpty, "Rejected files must not start work")
         try expect(!batch.start([], importFile: importer), "Empty input must not start")

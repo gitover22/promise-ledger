@@ -61,8 +61,8 @@ extension ImportTests {
         let batch = ImportBatch()
         let images = root.appendingPathComponent("Images")
         try FileManager.default.createDirectory(at: images, withIntermediateDirectories: true)
-        batch.start(selection.confirm(), importFile: { url in
-            _ = try ImagePipeline.prepare(url: url, imagesDirectory: images)
+        batch.start(selection.confirm(), importFile: { url, expectedContentHash in
+            _ = try ImagePipeline.prepare(url: url, imagesDirectory: images, expectedContentHash: expectedContentHash)
             return .imported(entryID: "unexpected")
         })
         try await finished(batch)
