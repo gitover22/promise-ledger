@@ -168,7 +168,7 @@ private final class SQLiteLedger {
             let entries = try list()
             let root = try reminderRoot(entryID, entries: entries)
             guard entries.contains(where: { $0.id == root && $0.state == .confirmed }) else {
-                throw LedgerError.message("请先核对原订单并入账，再为它设置待办。")
+                throw LedgerError.message("请先确认账单入账，再添加待办。")
             }
             if let quote = sourceQuote {
                 guard !quote.isEmpty, let evidence = entries.first(where: { $0.id == entryID }),
@@ -193,7 +193,7 @@ private final class SQLiteLedger {
             reminder.title = title; reminder.dueDate = dueDate; reminder.updatedAt = Date()
             reminder = try reminder.validated()
             if try matchingReminder(reminder, in: all.filter { $0.id != id }, entries: list()) != nil {
-                throw LedgerError.message("这个订单已有相同事项与日期的待办，请修改原待办。")
+                throw LedgerError.message("已有相同事项和日期的待办，请编辑已有待办。")
             }
             try writeReminder(reminder)
         }
@@ -390,5 +390,5 @@ private final class SQLiteLedger {
         guard let value = sqlite3_column_text(statement, index) else { return nil }
         return String(cString: value)
     }
-    private func databaseError() -> LedgerError { .message("本地数据库操作失败。凭据不会被删除，请重试。") }
+    private func databaseError() -> LedgerError { .message("无法读写本地数据，请检查磁盘空间和文件权限后重试。") }
 }

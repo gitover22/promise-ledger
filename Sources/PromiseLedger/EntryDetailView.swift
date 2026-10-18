@@ -21,7 +21,7 @@ struct EntryDetailView: View {
                 if let entry { StateBadge(state: entry.state) }
                 Spacer()
                 if displayedID != nil {
-                    Button("返回本次凭据") { displayedID = nil }.buttonStyle(QuietButtonStyle())
+                    Button("返回") { displayedID = nil }.buttonStyle(QuietButtonStyle())
                 }
                 Button("关闭") { dismiss() }.buttonStyle(QuietButtonStyle())
             }.padding(24)
@@ -53,7 +53,7 @@ struct EntryDetailView: View {
 
     private func sourcePanel(_ entry: LedgerEntry) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack { Label("原始凭据", systemImage: "photo"); Spacer(); Text(entry.source.label).foregroundStyle(Palette.secondary) }
+            HStack { Label("原图", systemImage: "photo"); Spacer(); Text(entry.source.label).foregroundStyle(Palette.secondary) }
                 .font(.system(size: 11, weight: .medium))
             if let image {
                 ScrollView {
@@ -62,7 +62,7 @@ struct EntryDetailView: View {
             } else {
                 ContentUnavailableView("未找到原图", systemImage: "photo.badge.exclamationmark")
             }
-            DisclosureGroup("查看 OCR 原文", isExpanded: $showText) {
+            DisclosureGroup("图片文字", isExpanded: $showText) {
                 ScrollView { Text(entry.ocrText.isEmpty ? "尚未识别文字" : entry.ocrText).font(.system(size: 10, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
                     .frame(height: 140).padding(.top, 6)
             }.font(.system(size: 11))
@@ -75,23 +75,21 @@ struct EntryDetailView: View {
         VStack(alignment: .leading, spacing: 17) {
             if entry.state == .duplicate || entry.state == .duplicateReview { duplicatePanel(entry) }
             HStack {
-                Label("AI 整理结果", systemImage: "sparkles").font(.system(size: 15, weight: .semibold))
-                Spacer()
-                Text("模型自评 \(Int(draft.confidence * 100))%").font(.system(size: 9)).foregroundStyle(Palette.secondary)
+                Label("账单信息", systemImage: "doc.text").font(.system(size: 15, weight: .semibold))
             }
             if !draft.summary.isEmpty {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("AI 初始摘要 · 人工修改后请以核对字段为准").font(.system(size: 9)).foregroundStyle(Palette.secondary)
+                    Text("识别摘要 · 修改后以账单信息为准").font(.system(size: 9)).foregroundStyle(Palette.secondary)
                     Text(draft.summary).font(.system(size: 11)).foregroundStyle(Palette.secondary).lineSpacing(4)
                 }
             }
             VStack(alignment: .leading, spacing: 13) {
                 field("账单名称", text: $draft.title)
                 field("商家", text: optional(\.merchant))
-                field("交易平台（以原文为准）", text: optional(\.platform))
+                field("交易平台", text: optional(\.platform))
                 HStack(spacing: 13) {
                     field("金额", text: optional(\.amount))
-                    field("币种（如 CNY）", text: Binding(get: { draft.currency ?? "" }, set: { draft.currency = $0.isEmpty ? nil : $0.uppercased() }))
+                    field("币种（如 CNY、USD）", text: Binding(get: { draft.currency ?? "" }, set: { draft.currency = $0.isEmpty ? nil : $0.uppercased() }))
                 }
                 HStack(spacing: 13) {
                     field("交易日期 YYYY-MM-DD", text: optional(\.transactionDate))
@@ -110,7 +108,7 @@ struct EntryDetailView: View {
             }.disabled(entry.state != .needsReview)
             if !draft.warnings.isEmpty {
                 VStack(alignment: .leading, spacing: 7) {
-                    Label("需要你核对", systemImage: "exclamationmark.circle").font(.system(size: 11, weight: .semibold))
+                    Label("请核对以下信息", systemImage: "exclamationmark.circle").font(.system(size: 11, weight: .semibold))
                     ForEach(draft.warnings, id: \.self) { Text("· " + $0).font(.system(size: 10)).lineSpacing(3) }
                 }.foregroundStyle(Palette.amber).padding(13).frame(maxWidth: .infinity, alignment: .leading)
                     .background(Palette.amber.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
@@ -123,15 +121,15 @@ struct EntryDetailView: View {
                             Text(promise.text).font(.system(size: 11, weight: .medium))
                             Text("原文：" + promise.sourceQuote).font(.system(size: 10)).foregroundStyle(Palette.secondary).textSelection(.enabled)
                             if let promisor = promise.promisor { Text("承诺方：" + promisor).font(.system(size: 10)) }
-                            if let conditions = promise.conditions { Text("条件：" + conditions).font(.system(size: 10)).foregroundStyle(Palette.secondary) }
-                            if let action = promise.userAction { Text("需要你：" + action).font(.system(size: 10)).foregroundStyle(Palette.green) }
+                            if let conditions = promise.conditions { Text("适用条件：" + conditions).font(.system(size: 10)).foregroundStyle(Palette.secondary) }
+                            if let action = promise.userAction { Text("处理事项：" + action).font(.system(size: 10)).foregroundStyle(Palette.green) }
                             if let deadline = promise.deadline { Text("原文截止日期：" + deadline).font(.system(size: 10)) }
-                            Button("核对日期，加入待办") { reminderDraft = ReminderDraft(entry: entry, promise: promise) }
+                            Button("添加待办") { reminderDraft = ReminderDraft(entry: entry, promise: promise) }
                                 .buttonStyle(QuietButtonStyle())
                                 .disabled(model.canonicalEntry(for: entry.id)?.state != .confirmed)
                         }
                     }
-                    Text("原订单入账后，可逐条确认待办与日期；未确认的 AI 承诺不会自动加入提醒。")
+                    Text("账单入账后可添加待办。事项和日期需单独确认，不会自动设置提醒。")
                         .font(.system(size: 9)).foregroundStyle(Palette.secondary)
                 }.padding(14).frame(maxWidth: .infinity, alignment: .leading).background(Palette.paleGreen.opacity(0.35), in: RoundedRectangle(cornerRadius: 10))
             }
@@ -144,27 +142,27 @@ struct EntryDetailView: View {
                         if succeeded { dismiss() }
                     }
                 } label: {
-                    Label(saving ? "正在保存…" : "确认无误，入账", systemImage: "checkmark")
+                    Label(saving ? "正在保存…" : "确认入账", systemImage: "checkmark")
                         .frame(maxWidth: .infinity)
                 }.buttonStyle(PrimaryButtonStyle()).disabled(saving)
-                Text("AI 可能出错。请对照原图核对金额、币种及付款状态。")
+                Text("识别可能有误，请对照原图核对金额、币种和付款状态。")
                     .font(.system(size: 9)).foregroundStyle(Palette.secondary)
             } else if entry.state == .confirmed {
-                Label("这笔账单已由你确认并保存在本机", systemImage: "checkmark.circle.fill")
+                Label("已确认入账", systemImage: "checkmark.circle.fill")
                     .font(.system(size: 11)).foregroundStyle(Palette.green)
             }
             if model.canonicalEntry(for: entry.id)?.state == .confirmed {
                 HStack {
-                    Button("为此订单新建待办") { reminderDraft = ReminderDraft(entry: entry) }
+                    Button("新建待办") { reminderDraft = ReminderDraft(entry: entry) }
                         .buttonStyle(QuietButtonStyle())
-                    Button("查看待处理账单") { model.showReminders(.all); dismiss() }
+                    Button("查看待办") { model.showReminders(.all); dismiss() }
                         .buttonStyle(QuietButtonStyle())
                 }
             }
             let evidence = model.linkedEvidence(for: entry)
             if !evidence.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
-                    Label("关联凭据 · 不重复计入金额", systemImage: "link").font(.system(size: 12, weight: .semibold))
+                    Label("补充凭据", systemImage: "link").font(.system(size: 12, weight: .semibold))
                     ForEach(evidence) { source in
                         Button { displayedID = source.id } label: {
                             VStack(alignment: .leading, spacing: 5) {
@@ -175,7 +173,7 @@ struct EntryDetailView: View {
                                    (other.decimalAmount != nil && original.decimalAmount != nil && other.decimalAmount != original.decimalAmount) ||
                                    (other.currency != nil && original.currency != nil && other.currency != original.currency) ||
                                    (other.paymentStatus != "未知" && original.paymentStatus != "未知" && other.paymentStatus != original.paymentStatus) {
-                                    Text("金额或付款状态可能变化，请对照核验；未覆盖已确认字段。")
+                                    Text("金额或付款状态与原订单不同，请核对原图。原订单信息未更改。")
                                         .font(.system(size: 10)).foregroundStyle(Palette.amber)
                                 }
                             }.frame(maxWidth: .infinity, alignment: .leading).padding(11)
@@ -184,9 +182,13 @@ struct EntryDetailView: View {
                     }
                 }
             }
-            if let version = entry.promptVersion {
-                Text("抽取版本：" + version).font(.system(size: 9)).foregroundStyle(Palette.secondary)
-            }
+            DisclosureGroup("识别信息") {
+                VStack(alignment: .leading, spacing: 7) {
+                    if let name = entry.model { Text("模型：" + name) }
+                    Text("模型自评：\(Int(draft.confidence * 100))%（仅供参考，不代表准确率）")
+                    if let version = entry.promptVersion { Text("提示词版本：" + version) }
+                }.font(.system(size: 10)).foregroundStyle(Palette.secondary).padding(.top, 5)
+            }.font(.system(size: 10))
             if let banner = model.banner { Text(banner).font(.system(size: 10)).foregroundStyle(Palette.amber).textSelection(.enabled) }
         }
     }
@@ -194,12 +196,12 @@ struct EntryDetailView: View {
     private func duplicatePanel(_ entry: LedgerEntry) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             if let target = entry.duplicateOf {
-                Label("同一订单的补充凭据", systemImage: "link").font(.system(size: 13, weight: .semibold))
-                Text("此来源及其中的承诺已保留，不会新增一笔金额，也不会覆盖原订单的已确认内容。").font(.system(size: 11)).lineSpacing(4)
-                Button("返回原订单") { displayedID = target }.buttonStyle(QuietButtonStyle())
+                Label("已关联到原订单", systemImage: "link").font(.system(size: 13, weight: .semibold))
+                Text("图片和承诺已作为补充凭据保存，不重复入账。原订单的金额和状态保持不变。").font(.system(size: 11)).lineSpacing(4)
+                Button("查看原订单") { displayedID = target }.buttonStyle(QuietButtonStyle())
             } else {
-                Label("先确认是否是同一订单", systemImage: "exclamationmark.bubble").font(.system(size: 13, weight: .semibold))
-                Text("仅凭相同商家、日期和金额不能自动认定重复。未完成核对前，这条记录不会入账。").font(.system(size: 11)).lineSpacing(4)
+                Label("核对重复账单", systemImage: "exclamationmark.bubble").font(.system(size: 13, weight: .semibold))
+                Text("这条记录可能与已有账单重复。请核对订单号和原图，选择关联或保留为新订单。核对前不会入账。").font(.system(size: 11)).lineSpacing(4)
                 ForEach(entry.duplicateCandidates, id: \.self) { id in
                     if let candidate = model.entries.first(where: { $0.id == id }) {
                         VStack(alignment: .leading, spacing: 8) {
@@ -208,13 +210,13 @@ struct EntryDetailView: View {
                                 .font(.system(size: 10)).foregroundStyle(Palette.secondary)
                             HStack {
                                 Button("查看已有凭据") { displayedID = id }.buttonStyle(QuietButtonStyle())
-                                Button("同一订单，关联此记录") { Task { await model.linkDuplicate(entry, to: id) } }
+                                Button("关联到此订单") { Task { await model.linkDuplicate(entry, to: id) } }
                                     .buttonStyle(QuietButtonStyle())
                             }
                         }
                     }
                 }
-                Button("已核对，确认是不同订单") { Task { await model.keepSeparate(entry) } }
+                Button("保留为新订单") { Task { await model.keepSeparate(entry) } }
                     .buttonStyle(PrimaryButtonStyle(compact: true))
             }
         }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
@@ -225,9 +227,9 @@ struct EntryDetailView: View {
         VStack(alignment: .leading, spacing: 19) {
             Label(entry.state.label, systemImage: entry.state == .failed ? "exclamationmark.bubble" : "sparkles")
                 .font(.system(size: 18, weight: .medium))
-            if entry.state == .processing { ProgressView(); Text(model.activity ?? "正在整理账单…").font(.system(size: 12)) }
+            if entry.state == .processing { ProgressView(); Text(model.activity ?? "正在识别账单…").font(.system(size: 12)) }
             if let error = entry.error { Text(error).font(.system(size: 12)).lineSpacing(6).textSelection(.enabled) }
-            Text("原图已安全保存在这台 Mac。识别中断不会丢失原始凭据。")
+            Text("原图已保存在本机，可稍后重新识别。")
                 .font(.system(size: 11)).foregroundStyle(Palette.secondary).lineSpacing(5)
             if entry.state != .processing {
                 Button(entry.state == .failed ? "重新识别" : "开始识别") { dismiss(); model.retry(entry) }
@@ -239,7 +241,8 @@ struct EntryDetailView: View {
     private func field(_ label: String, text: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label).font(.system(size: 10)).foregroundStyle(Palette.secondary)
-            TextField("未识别，可手动填写", text: text).textFieldStyle(.roundedBorder).font(.system(size: 12))
+            TextField(entry?.state == .needsReview ? "手动填写" : "未填写", text: text)
+                .textFieldStyle(.roundedBorder).font(.system(size: 12))
         }
     }
     private func optional(_ keyPath: WritableKeyPath<BillExtraction, String?>) -> Binding<String> {

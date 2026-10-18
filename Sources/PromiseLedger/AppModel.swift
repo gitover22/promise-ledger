@@ -5,7 +5,7 @@ import LedgerCore
 import LedgerMac
 
 enum LedgerSection: String, CaseIterable, Identifiable {
-    case all = "全部账单", review = "待我确认", confirmed = "已入账", reminders = "待处理账单"
+    case all = "全部账单", review = "待确认", confirmed = "已入账", reminders = "待办事项"
     var id: String { rawValue }
     var symbol: String {
         switch self {
@@ -90,10 +90,10 @@ enum LedgerSection: String, CaseIterable, Identifiable {
         do {
             if let id = draft.existingID {
                 try await database.editReminder(id: id, title: title, dueDate: dueDate)
-                banner = "待办已更新，新的日期将用于客户端提示。"
+                banner = "待办已更新。"
             } else {
                 let stored = try await database.addReminder(entryID: draft.entryID, title: title, dueDate: dueDate, sourceQuote: draft.sourceQuote)
-                banner = stored.status == .pending ? "待办已保存，相同订单、事项和日期不会重复添加。" : "已有相同待办，状态为「\(stored.status.label)」，未重新加入提醒；可在历史中恢复。"
+                banner = stored.status == .pending ? "待办已保存。" : "已有\(stored.status.label)的相同待办，未重复添加。可在历史记录中恢复。"
             }
             try await reload()
             return true
@@ -149,8 +149,8 @@ enum LedgerSection: String, CaseIterable, Identifiable {
     func chooseImages() {
         guard !isImporting else { return }
         let panel = NSOpenPanel()
-        panel.title = "导入订单图片"
-        panel.message = "支持手机订单截图、电子收据及账单图片，每张不超过 40 MB。"
+        panel.title = "导入图片"
+        panel.message = "选择订单截图或收据，每次最多 10 张，每张不超过 40 MB。"
         panel.allowedContentTypes = [.png, .jpeg, .heic, .tiff]
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
@@ -159,7 +159,7 @@ enum LedgerSection: String, CaseIterable, Identifiable {
 
     func importImages(_ urls: [URL]) {
         guard !isImporting, let database else { return }
-        guard urls.count <= 10 else { banner = "每次最多导入 10 张图片，模型会按顺序识别。"; return }
+        guard urls.count <= 10 else { banner = "每次最多导入 10 张图片，请分批导入。"; return }
         isImporting = true
         Task {
             defer { isImporting = false }
@@ -198,7 +198,7 @@ enum LedgerSection: String, CaseIterable, Identifiable {
         if let existing = entries.first(where: { $0.imageHash == image.hash }) {
             selection = existing.duplicateOf ?? existing.id
             if ![.queued, .processing].contains(existing.state) { requestedDetailID = selection }
-            banner = "这张图片已经在账本里，已为你打开原记录。"
+            banner = "图片已导入，未重复添加。"
             openWindow?()
             return
         }
@@ -218,7 +218,7 @@ enum LedgerSection: String, CaseIterable, Identifiable {
     func revokeConsent() {
         if isPreview { previewConsent = false }
         else { defaults.set(false, forKey: "aiTextConsent.v1") }
-        banner = "已暂停新的 AI 识别。正在进行的请求可能已发送，仍会完成并保存；后续识别将再次征得同意。"
+        banner = "已撤回识别授权。已发送的请求仍会完成并保存；后续识别需重新授权。"
         objectWillChange.send()
     }
 
@@ -258,7 +258,7 @@ enum LedgerSection: String, CaseIterable, Identifiable {
                 try await database.save(entry); try await reload()
                 return
             }
-            activity = "\(configuration.model) 正在整理账单…"
+            activity = "正在识别账单…"
             let result = try await AIClient(configuration: configuration).extract(ocrText: text)
             entry.extraction = result; entry.state = .needsReview; entry.model = configuration.model
             entry.promptVersion = LedgerSystemPrompt.version
@@ -267,7 +267,7 @@ enum LedgerSection: String, CaseIterable, Identifiable {
         } catch {
             entry.state = .failed; entry.error = error.localizedDescription
             do { try await database.save(entry); try await reload() }
-            catch { banner = "识别记录保存失败，请检查磁盘空间。原图仍保留在本机。" }
+            catch { banner = "识别结果保存失败，请检查磁盘空间。原图已保留。" }
             openWindow?()
         }
     }
@@ -287,10 +287,10 @@ enum LedgerSection: String, CaseIterable, Identifiable {
         guard let database, entry.state == .needsReview else { return false }
         guard draft.decimalAmount != nil, let currency = draft.currency,
               currency.range(of: #"^[A-Z]{3}$"#, options: .regularExpression) != nil else {
-            banner = "入账前请填写有效金额和三位大写币种（例如 CNY）。"; return false
+            banner = "请填写有效金额和币种代码（如 CNY、USD）。"; return false
         }
         guard !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            banner = "入账前请填写账单名称。"; return false
+            banner = "请填写账单名称。"; return false
         }
         if let date = draft.transactionDate, !date.isEmpty, !BillExtraction.isValidDate(date) {
             banner = "交易日期请使用 YYYY-MM-DD 格式，也可以留空。"; return false
@@ -321,7 +321,7 @@ enum LedgerSection: String, CaseIterable, Identifiable {
         do {
             try await database.keepAsSeparateOrder(entry.id)
             try await reload()
-            banner = "已记录你对“不同订单”的判断，请继续核对字段后入账。字段或候选记录变化时会重新检查。"
+            banner = "已保留为新订单，请核对信息后入账。"
         } catch { banner = error.localizedDescription }
     }
 
@@ -329,10 +329,10 @@ enum LedgerSection: String, CaseIterable, Identifiable {
         if let original = entry.duplicateOf {
             selection = original
             requestedDetailID = original
-            banner = "识别到同一订单：新截图已关联为补充凭据，不会重复计入金额，也不会覆盖已确认字段。"
+            banner = "已关联到原订单，不重复入账。新图片和承诺已保存，原订单信息未更改。"
             openWindow?()
         } else if entry.state == .duplicateReview {
-            banner = "发现疑似重复订单。请先比较已有记录，选择关联原订单或明确确认是另一笔，再入账。"
+            banner = "可能与已有账单重复，请核对后选择关联或保留为新订单。"
         }
     }
 

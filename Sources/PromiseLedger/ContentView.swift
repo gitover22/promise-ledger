@@ -63,7 +63,7 @@ struct ContentView: View {
                     Text("PROMISE LEDGER").font(.system(size: 8, weight: .medium)).tracking(1.2).foregroundStyle(Palette.secondary)
                 }
             }.padding(.top, 61).padding(.bottom, 42)
-            Text("我的空间").font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.secondary).padding(.bottom, 13).padding(.leading, 12)
+            Text("账本").font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.secondary).padding(.bottom, 13).padding(.leading, 12)
             ForEach(LedgerSection.allCases) { section in
                 Button {
                     model.section = section
@@ -86,9 +86,10 @@ struct ContentView: View {
             }
             Spacer(minLength: 40)
             VStack(alignment: .leading, spacing: 10) {
-                Image(systemName: "leaf").font(.system(size: 21, weight: .light)).foregroundStyle(Palette.green)
-                Text("轻轻一截，\n替你记得。").font(.system(size: 17, weight: .medium)).lineSpacing(5)
-                Text("只响应你的操作\n不持续录屏，不自动监视").font(.system(size: 10)).lineSpacing(5).foregroundStyle(Palette.secondary)
+                Image(systemName: "keyboard").font(.system(size: 21, weight: .light)).foregroundStyle(Palette.green)
+                Text("快捷截图").font(.system(size: 14, weight: .medium))
+                Text(GlobalHotKey.display).font(.system(size: 17, weight: .medium, design: .monospaced))
+                Text("在订单页面按下快捷键\n即可截取当前屏幕").font(.system(size: 10)).lineSpacing(5).foregroundStyle(Palette.secondary)
             }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
                 .background(.white.opacity(0.45), in: RoundedRectangle(cornerRadius: 13)).padding(.bottom, 22)
             Button { model.showSettings = true } label: {
@@ -99,7 +100,7 @@ struct ContentView: View {
 
     private var topBar: some View {
         HStack {
-            Text(model.isPreview ? "预览测试空间 · 与真实账本隔离" : "你的智能 AI 账本").font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.secondary)
+            Text(model.isPreview ? "演示模式 · 数据独立保存" : "本地账本").font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.secondary)
             Spacer()
             HStack(spacing: 6) {
                 Circle().fill(Palette.green).frame(width: 5, height: 5)
@@ -113,21 +114,26 @@ struct ContentView: View {
 
     private var hero: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 6) {
-                Image(systemName: "sparkle")
-                Text("少一点整理，多一点安心。")
-            }.font(.system(size: 10, weight: .medium)).foregroundStyle(Palette.green)
-            Text("每一笔，都有迹可循。").font(.system(size: 32, weight: .semibold)).tracking(-1)
-            Text("截下订单，或放进一张图片。AI 帮你整理金额、商家和那些值得记住的承诺。")
+            Text(model.section.rawValue).font(.system(size: 32, weight: .semibold)).tracking(-1)
+            Text(sectionDescription)
                 .font(.system(size: 12)).foregroundStyle(Palette.secondary).lineSpacing(5)
         }.padding(.top, 5)
+    }
+
+    private var sectionDescription: String {
+        switch model.section {
+        case .all: return "截图或导入图片，识别后核对入账。"
+        case .review: return "核对金额、币种和订单信息后入账。"
+        case .confirmed: return "查看已确认的账单和补充凭据。"
+        case .reminders: return "查看需要处理的事项。"
+        }
     }
 
     private var statistics: some View {
         HStack(spacing: 13) {
             metric("本月已确认金额", value: model.monthTotal, footnote: "按交易日期 · 不折算币种", symbol: "chart.bar.xaxis")
-            metric("已入账", value: "\(model.confirmedCount)", footnote: "每一笔，都经过你的确认", symbol: "checkmark.seal")
-            metric("待我确认", value: "\(model.reviewCount)", footnote: "AI 已整理，等你看一眼", symbol: "checkmark.bubble")
+            metric("已入账", value: "\(model.confirmedCount)", footnote: "已确认的账单", symbol: "checkmark.seal")
+            metric("待确认", value: "\(model.reviewCount)", footnote: "核对信息后入账", symbol: "checkmark.bubble")
         }
     }
 
@@ -150,8 +156,8 @@ struct ContentView: View {
                 HStack(spacing: 14) {
                     Image(systemName: "viewfinder").font(.system(size: 25, weight: .light)).frame(width: 40)
                     VStack(alignment: .leading, spacing: 7) {
-                        Text(model.isCapturing ? "正在截取屏幕…" : "截屏记一笔").font(.system(size: 15, weight: .semibold))
-                        Text("全屏截取当前鼠标所在显示器").font(.system(size: 10)).opacity(0.7)
+                        Text(model.isCapturing ? "正在截图…" : "截图识别").font(.system(size: 15, weight: .semibold))
+                        Text("截取鼠标所在屏幕的完整画面").font(.system(size: 10)).opacity(0.7)
                     }
                     Spacer(minLength: 5)
                     Text(GlobalHotKey.display).font(.system(size: 11, weight: .medium, design: .monospaced))
@@ -163,8 +169,8 @@ struct ContentView: View {
                 HStack(spacing: 14) {
                     Image(systemName: "photo.badge.plus").font(.system(size: 25, weight: .light)).foregroundStyle(Palette.green).frame(width: 35)
                     VStack(alignment: .leading, spacing: 7) {
-                        Text(model.isImporting ? "正在导入…" : "导入订单图片").font(.system(size: 15, weight: .semibold))
-                        Text("手机截图也可以 · 支持直接拖入").font(.system(size: 10)).foregroundStyle(Palette.secondary)
+                        Text(model.isImporting ? "正在导入…" : "导入图片").font(.system(size: 15, weight: .semibold))
+                        Text("支持订单截图、收据，可直接拖入").font(.system(size: 10)).foregroundStyle(Palette.secondary)
                     }
                     Spacer(minLength: 0)
                     Image(systemName: "arrow.up.right").font(.system(size: 12)).foregroundStyle(Palette.secondary)
@@ -178,7 +184,7 @@ struct ContentView: View {
     private var records: some View {
         VStack(alignment: .leading, spacing: 15) {
             HStack {
-                Text(model.section == .all ? "最近的记录" : model.section.rawValue).font(.system(size: 15, weight: .semibold))
+                Text(model.section == .all ? "账单记录" : model.section.rawValue).font(.system(size: 15, weight: .semibold))
                 Text("\(model.filteredEntries.count)").font(.system(size: 10)).foregroundStyle(Palette.secondary)
                     .padding(.horizontal, 7).padding(.vertical, 3).background(Palette.border.opacity(0.4), in: Capsule())
                 Spacer()
@@ -215,18 +221,37 @@ struct ContentView: View {
                     .overlay(RoundedRectangle(cornerRadius: 10).stroke(Palette.border.opacity(0.7))).rotationEffect(.degrees(5))
             }.frame(width: 125, height: 135)
             VStack(alignment: .leading, spacing: 10) {
-                Text(model.search.isEmpty && model.section == .all ? "你的第一笔，从这里开始。" : "这里暂时没有记录。")
+                Text(emptyTitle)
                     .font(.system(size: 16, weight: .medium))
-                Text(model.search.isEmpty && model.section == .all ? "在订单页面按下 ⌃⌥L，或把手机截图拖到这里。\n整理这件小事，交给 AI。" : "试试其他分类或搜索关键词。")
+                Text(emptyDescription)
                     .font(.system(size: 11)).foregroundStyle(Palette.secondary).lineSpacing(6)
                 if model.search.isEmpty && model.section == .all {
-                    Button("导入第一张图片") { model.chooseImages() }.buttonStyle(QuietButtonStyle()).padding(.top, 2)
+                    Button("导入图片") { model.chooseImages() }.buttonStyle(QuietButtonStyle()).padding(.top, 2)
                 }
             }
             Spacer(minLength: 0)
         }.padding(.horizontal, 35).padding(.vertical, 21).frame(maxWidth: .infinity, alignment: .leading)
             .background(.white.opacity(0.45), in: RoundedRectangle(cornerRadius: 13))
             .overlay(RoundedRectangle(cornerRadius: 13).stroke(Palette.border, style: StrokeStyle(lineWidth: 1, dash: [5, 4])))
+    }
+
+    private var emptyTitle: String {
+        if !model.search.isEmpty { return "未找到相关账单" }
+        switch model.section {
+        case .all: return "暂无账单"
+        case .review: return "暂无待确认账单"
+        case .confirmed: return "暂无已入账账单"
+        case .reminders: return "暂无待办"
+        }
+    }
+    private var emptyDescription: String {
+        if !model.search.isEmpty { return "试试其他商家名称、商品名称或订单号。" }
+        switch model.section {
+        case .all: return "导入订单截图或收据，或按 ⌃⌥L 截图识别。"
+        case .review: return "识别完成或需要核对重复记录的账单会显示在这里。"
+        case .confirmed: return "在账单详情中核对信息并确认入账后，可在这里查看。"
+        case .reminders: return "可在已入账账单的详情中添加待办。"
+        }
     }
 
     private func entryRow(_ entry: LedgerEntry) -> some View {
@@ -238,7 +263,7 @@ struct ContentView: View {
                 Text([entry.extraction?.merchant ?? entry.source.label, entry.extraction?.transactionDate ?? entry.createdAt.formatted(date: .abbreviated, time: .shortened)].joined(separator: "  ·  "))
                     .font(.system(size: 10)).foregroundStyle(Palette.secondary).lineLimit(1)
                 if !model.linkedEvidence(for: entry).isEmpty {
-                    Text("已关联 \(model.linkedEvidence(for: entry).count) 张补充凭据 · 金额仅计一次")
+                    Text("补充凭据 \(model.linkedEvidence(for: entry).count) 张 · 不重复入账")
                         .font(.system(size: 9)).foregroundStyle(Palette.green)
                 }
             }
@@ -252,10 +277,10 @@ struct ContentView: View {
     private var footer: some View {
         HStack(spacing: 6) {
             Image(systemName: "lock.shield").font(.system(size: 10))
-            Text("原图留在本机 · 文字经同意发送至 MaaS · AI 结果由你确认")
+            Text("图片保存在本机 · 识别需发送图片文字至 AI 服务")
                 .font(.system(size: 9))
             Spacer()
-            Text("MVP  /  0.3").font(.system(size: 8, design: .monospaced))
+            Text("0.3.1").font(.system(size: 8, design: .monospaced))
         }.foregroundStyle(Palette.secondary.opacity(0.85))
     }
 
@@ -273,7 +298,7 @@ struct ContentView: View {
             ProgressView().controlSize(.small)
             Text(message).font(.system(size: 11))
             Spacer()
-            Text("队列 \(model.queueCount)").font(.system(size: 10)).foregroundStyle(Palette.secondary)
+            Text("未完成 \(model.queueCount) 张").font(.system(size: 10)).foregroundStyle(Palette.secondary)
         }.padding(14).background(Palette.paleGreen.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
     }
 
