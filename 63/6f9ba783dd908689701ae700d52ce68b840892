@@ -1,0 +1,35 @@
+Tests/ImportTests/PreviewTests.swift
+  s_cb8e6971025af1::t_2f8076b8c03f50 64-65
+Tests/ImportTests/ChangedFileTests.swift
+  s_cb8e6971025af1::t_1094a1c5c24d7d 1-31,34-43,58-62
+  s_cb8e6971025af1::t_179aa845f746fd 44-57
+  s_cb8e6971025af1::t_2f8076b8c03f50 32-33
+Sources/LedgerMac/ImagePipeline.swift
+  s_cb8e6971025af1::t_2f8076b8c03f50 16,22-23,32,38-48,50-53,72
+Sources/LedgerMac/ImportBatch.swift
+  s_cb8e6971025af1::t_2f8076b8c03f50 28,31,33,37-38,52,74
+Sources/LedgerMac/ImportSelection.swift
+  s_cb8e6971025af1::t_2f8076b8c03f50 80-81
+Sources/PromiseLedger/AppModel.swift
+  s_cb8e6971025af1::t_2f8076b8c03f50 181,184
+  s_cb8e6971025af1::t_1c22a46598c4a1 168
+Tests/ImportTests/ImportTests.swift
+  s_cb8e6971025af1::t_1094a1c5c24d7d 25
+  s_cb8e6971025af1::t_2f8076b8c03f50 42,61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "636f9ba783dd908689701ae700d52ce68b840892",
+  "prompts": {},
+  "sessions": {
+    "s_cb8e6971025af1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a14dda-474b-7b91-b9ea-25091afa4443",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "zhengxiaodong <zhengxiaodong@xiaohongshu.com>"
+    }
+  }
+}
