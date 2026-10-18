@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <key>CFBundleIdentifier</key><string>life.promiseledger.mac</string>
+    <key>CFBundleName</key><string>Promise Ledger</string>
+    <key>CFBundleDisplayName</key><string>AI 账本</string>
+    <key>CFBundleExecutable</key><string>PromiseLedger</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>0.1.0</string>
+    <key>CFBundleVersion</key><string>1</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>LSUIElement</key><true/>
+    <key>NSHighResolutionCapable</key><true/>
+    <key>NSScreenCaptureUsageDescription</key><string>仅在你按下截图快捷键或点击截图按钮时，截取当前屏幕并提取账单。不会持续录屏。</string>
+    <key>NSHumanReadableCopyright</key><string>Promise Ledger · 你的智能 AI 账本</string>
+</dict></plist>

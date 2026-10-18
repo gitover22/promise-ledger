@@ -1,0 +1,18 @@
+{
+  "chat_completions_url": "https://maas.devops.rednote.life/gateway-v2/v1/chat/completions",
+  "model": "GPT-5.6 Sol",
+  "authorization_header": "Authorization",
+  "authorization_value_prefix": "Bearer ",
+  "application_id": "seal",
+  "application_id_field": "x-maas-app-id",
+  "application_id_location": "header",
+  "credential": {
+    "store": "macos-keychain",
+    "service": "promise-ledger.maas.api-key",
+    "account": "promise-ledger"
+  },
+  "request_defaults": {
+    "stream": true,
+    "stream_options": { "include_usage": true }
+  }
+}
