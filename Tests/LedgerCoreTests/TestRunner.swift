@@ -6,16 +6,16 @@ struct TestFailure: LocalizedError {
     var errorDescription: String? { message }
 }
 
-private func expect(_ condition: @autoclosure () throws -> Bool, _ message: String = "Assertion failed", line: UInt = #line) throws {
+func expect(_ condition: @autoclosure () throws -> Bool, _ message: String = "Assertion failed", line: UInt = #line) throws {
     guard try condition() else { throw TestFailure(message: "Line \(line): \(message)") }
 }
 
-private func expectThrows(_ operation: () throws -> Void, line: UInt = #line) throws {
+func expectThrows(_ operation: () throws -> Void, line: UInt = #line) throws {
     do { try operation() } catch { return }
     throw TestFailure(message: "Line \(line): expected an error")
 }
 
-/// Dependency-free unit runner: also works with Command Line Tools, without XCTest.
+/// Dependency-free unit runner; named separately from main.swift for multi-file @main.
 @main struct LedgerTests {
     static func main() async {
         let cases: [(String, () async throws -> Void)] = [
@@ -33,12 +33,13 @@ private func expectThrows(_ operation: () throws -> Void, line: UInt = #line) th
             ("SQLite duplicate image constraint", { try await databaseDuplicate() }),
             ("interrupted work recovery", { try await recovery() })
         ]
+        let allCases = cases + OrderDedupTests.cases + ReminderTests.cases
         var failures = 0
-        for (name, operation) in cases {
+        for (name, operation) in allCases {
             do { try await operation(); print("PASS: \(name)") }
             catch { failures += 1; print("FAIL: \(name): \(error.localizedDescription)") }
         }
-        print("\(cases.count - failures)/\(cases.count) tests passed. No network calls or credentials used.")
+        print("\(allCases.count - failures)/\(allCases.count) tests passed. No network calls or credentials used.")
         if failures > 0 { exit(1) }
     }
 

@@ -67,15 +67,16 @@ public enum ImagePipeline {
     }
 
     /// Synthetic receipt for diagnostics only; never reads the user's screen.
-    @MainActor public static func makeDiagnosticReceipt(at url: URL) throws {
+    @MainActor public static func makeDiagnosticReceipt(at url: URL, alternate: Bool = false) throws {
         let image = NSImage(size: NSSize(width: 1_000, height: 1_000))
         image.lockFocus()
         NSColor.white.setFill()
         NSRect(x: 0, y: 0, width: 1_000, height: 1_000).fill()
-        let lines = ["PROMISE LEDGER TEST RECEIPT", "Merchant: Ledger Test Store",
+        let lines = [alternate ? "ORDER DETAILS - SUPPORT COPY" : "PROMISE LEDGER TEST RECEIPT",
+                     "Platform: Taobao", "Merchant: Ledger Test Store",
                      "Product: Wireless Keyboard", "Order: TEST-20261018-001",
                      "Date: 2026-10-18", "Payment: Paid", "Currency: CNY",
-                     "Total paid: 129.00", "Warranty: 1 year"]
+                     "Total paid: 129.00", alternate ? "Refund promised within 3 business days" : "Warranty: 1 year"]
         for (index, line) in lines.enumerated() {
             (line as NSString).draw(at: NSPoint(x: 55, y: 900 - index * 90), withAttributes: [
                 .font: NSFont.monospacedSystemFont(ofSize: 31, weight: index == 0 ? .bold : .regular),

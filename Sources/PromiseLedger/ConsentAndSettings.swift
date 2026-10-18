@@ -75,6 +75,14 @@ struct SettingsView: View {
                     }.font(.system(size: 11))
                 }.padding(10)
             }
+            GroupBox("待办提示") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Toggle("打开客户端时显示待处理摘要", isOn: Binding(
+                        get: { model.reminderOnOpen }, set: { model.setReminderOnOpen($0) }))
+                    Text("按本机日期查看今天、本周（周一至周日）、本月；逾期单列。不会发送系统通知或邮件，也不会在每天 9:00 自动弹窗。邮箱提醒列入后续计划。")
+                        .font(.system(size: 11)).foregroundStyle(Palette.secondary).lineSpacing(4)
+                }.padding(10)
+            }
             GroupBox("本地数据") {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("SQLite 数据库、原图和 OCR 文字保存在此 Mac 的 Application Support/PromiseLedger 中，不在 Git 仓库中。当前版本未做应用层加密，请使用 FileVault 保护磁盘。")

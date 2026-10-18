@@ -15,7 +15,7 @@ import LedgerMac
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let model: AppModel = {
-        guard CommandLine.arguments.contains("--preview") else { return AppModel() }
+        guard CommandLine.arguments.contains("--preview") || CommandLine.arguments.contains("--preview-reminders") else { return AppModel() }
         let identifier = UUID().uuidString
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("PromiseLedger-UIPreview-" + identifier)
         return AppModel(dataRoot: root, isPreview: true)
@@ -64,13 +64,16 @@ import LedgerMac
     }
 
     @objc func showWindow() {
+        let wasHidden = window?.isVisible == false
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+        if wasHidden { Task { await model.windowOpened() } }
     }
     @objc private func capture() { model.captureScreen() }
     @objc private func importImages() { showWindow(); model.chooseImages() }
     @objc private func settings() { showWindow(); model.showSettings = true }
+    @objc private func reminders() { showWindow(); model.showReminders() }
     @objc private func quit() { NSApp.terminate(nil) }
 
     private func buildStatusMenu() {
@@ -83,6 +86,7 @@ import LedgerMac
         menu.addItem(activity); activityItem = activity
         menu.addItem(.separator())
         menu.addItem(item("打开账本", #selector(showWindow)))
+        menu.addItem(item("查看待处理账单", #selector(reminders)))
         menu.addItem(item("全屏截图并识别         ⌃⌥L", #selector(capture)))
         menu.addItem(item("导入订单图片…", #selector(importImages)))
         menu.addItem(.separator())

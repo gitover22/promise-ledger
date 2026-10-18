@@ -37,8 +37,8 @@ struct StateBadge: View {
     let state: EntryState
     var color: Color {
         switch state {
-        case .confirmed: return Palette.green
-        case .needsReview: return Palette.amber
+        case .confirmed, .duplicate: return Palette.green
+        case .needsReview, .duplicateReview: return Palette.amber
         case .failed: return .red.opacity(0.75)
         default: return Palette.secondary
         }

@@ -8,7 +8,7 @@ public enum LedgerError: LocalizedError {
 }
 
 public enum EntryState: String, Codable, Sendable {
-    case queued, processing, needsReview, confirmed, failed
+    case queued, processing, needsReview, confirmed, failed, duplicate, duplicateReview
 
     public var label: String {
         switch self {
@@ -17,6 +17,8 @@ public enum EntryState: String, Codable, Sendable {
         case .needsReview: return "待确认"
         case .confirmed: return "已入账"
         case .failed: return "识别未完成"
+        case .duplicate: return "已关联同一订单"
+        case .duplicateReview: return "疑似重复，待核对"
         }
     }
 }
@@ -31,9 +33,19 @@ public struct LedgerPromise: Codable, Equatable, Sendable {
     public var text: String
     public var sourceQuote: String
     public var deadline: String?
-    enum CodingKeys: String, CodingKey { case text, sourceQuote = "source_quote", deadline }
-    public init(text: String, sourceQuote: String, deadline: String? = nil) {
+    public var promisor: String?
+    public var conditions: String?
+    public var userAction: String?
+    public var deadlineSourceQuote: String?
+    enum CodingKeys: String, CodingKey {
+        case text, sourceQuote = "source_quote", deadline, promisor, conditions
+        case userAction = "user_action", deadlineSourceQuote = "deadline_source_quote"
+    }
+    public init(text: String, sourceQuote: String, deadline: String? = nil, promisor: String? = nil,
+                conditions: String? = nil, userAction: String? = nil, deadlineSourceQuote: String? = nil) {
         self.text = text; self.sourceQuote = sourceQuote; self.deadline = deadline
+        self.promisor = promisor; self.conditions = conditions; self.userAction = userAction
+        self.deadlineSourceQuote = deadlineSourceQuote
     }
 }
 
@@ -45,6 +57,9 @@ public struct BillExtraction: Codable, Equatable, Sendable {
     public var currency: String?
     public var transactionDate: String?
     public var orderID: String?
+    public var platform: String?
+    public var orderIDSourceQuote: String?
+    public var documentKind: String?
     public var category: String
     public var paymentStatus: String
     public var summary: String
@@ -57,17 +72,20 @@ public struct BillExtraction: Codable, Equatable, Sendable {
     enum CodingKeys: String, CodingKey {
         case isBill = "is_bill", title, merchant, amount, currency
         case transactionDate = "transaction_date", orderID = "order_id"
+        case platform, orderIDSourceQuote = "order_id_source_quote", documentKind = "document_kind"
         case category, paymentStatus = "payment_status", summary, confidence, warnings, promises
     }
 
     public init(isBill: Bool = true, title: String = "待核对账单", merchant: String? = nil,
                 amount: String? = nil, currency: String? = nil, transactionDate: String? = nil,
                 orderID: String? = nil, category: String = "未分类", paymentStatus: String = "未知",
-                summary: String = "", confidence: Double = 0, warnings: [String] = [], promises: [LedgerPromise] = []) {
+                summary: String = "", confidence: Double = 0, warnings: [String] = [], promises: [LedgerPromise] = [],
+                platform: String? = nil, orderIDSourceQuote: String? = nil, documentKind: String? = nil) {
         self.isBill = isBill; self.title = title; self.merchant = merchant; self.amount = amount
         self.currency = currency; self.transactionDate = transactionDate; self.orderID = orderID
         self.category = category; self.paymentStatus = paymentStatus; self.summary = summary
         self.confidence = confidence; self.warnings = warnings; self.promises = promises
+        self.platform = platform; self.orderIDSourceQuote = orderIDSourceQuote; self.documentKind = documentKind
     }
 
     public var decimalAmount: Decimal? {
@@ -87,7 +105,7 @@ public struct BillExtraction: Codable, Equatable, Sendable {
     }
 
     public func validated(ocrText: String) throws -> BillExtraction {
-        guard isBill else { throw LedgerError.message("这张图片没有识别到订单、收据或账单。请换一张包含商品和金额的图片。") }
+        guard isBill else { throw LedgerError.message("这张图片没有识别到交易或交易承诺。请导入订单、收据，或包含交易信息的客服与规则截图。") }
         guard confidence.isFinite && (0...1).contains(confidence) else {
             throw LedgerError.message("模型返回了无效的可信度，请重试。")
         }
@@ -106,13 +124,26 @@ public struct BillExtraction: Codable, Equatable, Sendable {
         }
         if !Self.categories.contains(category) { result.category = "未分类" }
         if result.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { result.title = "待核对账单" }
+        if let orderID = result.orderID, !OrderIdentity.hasOrderEvidence(orderID, quote: result.orderIDSourceQuote, ocr: ocrText) {
+            result.orderIDSourceQuote = nil
+            result.warnings.append("订单号缺少明确的订单原文依据，不能据此自动合并，请人工核对。")
+        }
+        if let status = ["已支付", "待支付", "已退款", "已取消", "未知"].first(where: { $0 == result.paymentStatus }) {
+            result.paymentStatus = status
+        } else { result.paymentStatus = "未知" }
         let evidence = ocrText.filter { !$0.isWhitespace }
         result.promises = promises.filter { promise in
             let quote = promise.sourceQuote.filter { !$0.isWhitespace }
             return !quote.isEmpty && evidence.contains(quote)
         }.map { promise in
             var verified = promise
-            if let deadline = verified.deadline, !Self.isValidDate(deadline) { verified.deadline = nil }
+            if let deadline = verified.deadline {
+                let quote = verified.deadlineSourceQuote ?? verified.sourceQuote
+                if !Self.isValidDate(deadline) || !Evidence.explicitDate(deadline, appearsIn: quote) || !Evidence.contains(quote, in: ocrText) {
+                    verified.deadline = nil
+                    verified.deadlineSourceQuote = nil
+                }
+            }
             return verified
         }
         if result.promises.count != promises.count { result.warnings.append("缺少原文依据的承诺已被过滤。") }
@@ -142,13 +173,21 @@ public struct LedgerEntry: Identifiable, Sendable {
     public var extraction: BillExtraction?
     public var error: String?
     public var model: String?
+    public var duplicateOf: String?
+    public var duplicateCandidates: [String]
+    public var distinctFingerprint: String?
+    public var promptVersion: String?
 
     public init(id: String = UUID().uuidString, createdAt: Date = Date(), source: EntrySource,
                 imageFilename: String, imageHash: String, state: EntryState = .queued,
-                ocrText: String = "", extraction: BillExtraction? = nil, error: String? = nil, model: String? = nil) {
+                ocrText: String = "", extraction: BillExtraction? = nil, error: String? = nil, model: String? = nil,
+                duplicateOf: String? = nil, duplicateCandidates: [String] = [], distinctFingerprint: String? = nil,
+                promptVersion: String? = nil) {
         self.id = id; self.createdAt = createdAt; self.source = source
         self.imageFilename = imageFilename; self.imageHash = imageHash; self.state = state
         self.ocrText = ocrText; self.extraction = extraction; self.error = error; self.model = model
+        self.duplicateOf = duplicateOf; self.duplicateCandidates = duplicateCandidates
+        self.distinctFingerprint = distinctFingerprint; self.promptVersion = promptVersion
     }
     public var title: String { extraction?.title ?? (source == .screenshot ? "一张新的屏幕截图" : "一张新的订单图片") }
 }

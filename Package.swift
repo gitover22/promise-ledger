@@ -15,6 +15,6 @@ let package = Package(
         .target(name: "LedgerMac", dependencies: ["LedgerCore"]),
         .executableTarget(name: "PromiseLedger", dependencies: ["LedgerCore", "LedgerMac"]),
         .executableTarget(name: "LedgerCheck", dependencies: ["LedgerCore", "LedgerMac"]),
-        .executableTarget(name: "LedgerTests", dependencies: ["LedgerCore"], path: "Tests/LedgerCoreTests")
+        .executableTarget(name: "LedgerTests", dependencies: ["LedgerCore", "CSQLite"], path: "Tests/LedgerCoreTests")
     ]
 )

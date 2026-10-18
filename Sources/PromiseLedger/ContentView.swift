@@ -16,12 +16,17 @@ struct ContentView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     topBar
-                    hero
-                    statistics
-                    intake
+                    if model.section == .reminders {
+                        ReminderBoard()
+                    } else {
+                        hero
+                        if model.shouldShowOpenReminder { OpenReminderCard() }
+                        statistics
+                        intake
+                    }
                     if let banner = model.banner { bannerView(banner) }
                     if let activity = model.activity { processingView(activity) }
-                    records
+                    if model.section != .reminders { records }
                     footer
                 }.padding(.horizontal, 34).padding(.top, 37).padding(.bottom, 25)
             }.background(Palette.background)
@@ -37,7 +42,16 @@ struct ContentView: View {
         }
         .sheet(isPresented: $model.showConsent) { ConsentView().environmentObject(model) }
         .sheet(isPresented: $model.showSettings) { SettingsView().environmentObject(model) }
-        .sheet(item: $detail) { entry in EntryDetailView(entryID: entry.id).environmentObject(model) }
+        .sheet(item: $detail) { entry in EntryDetailView(entryID: entry.id).id(entry.id).environmentObject(model) }
+        .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in model.updateCalendar() }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)) { _ in model.updateCalendar() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in model.updateCalendar() }
+        .onChange(of: model.requestedDetailID) { _, id in
+            if let id, let entry = model.entries.first(where: { $0.id == id }), !model.showSettings, !model.showConsent {
+                detail = entry
+                model.requestedDetailID = nil
+            }
+        }
     }
 
     private var sidebar: some View {
@@ -60,6 +74,10 @@ struct ContentView: View {
                         Spacer()
                         if section == .review && model.reviewCount > 0 {
                             Text("\(model.reviewCount)").font(.system(size: 10, weight: .semibold))
+                                .padding(.horizontal, 6).padding(.vertical, 3).background(.white.opacity(0.8), in: Capsule())
+                        }
+                        if section == .reminders && !model.agenda.pending.isEmpty {
+                            Text("\(model.agenda.pending.count)").font(.system(size: 10, weight: .semibold))
                                 .padding(.horizontal, 6).padding(.vertical, 3).background(.white.opacity(0.8), in: Capsule())
                         }
                     }.padding(.horizontal, 12).padding(.vertical, 13)
@@ -219,6 +237,10 @@ struct ContentView: View {
                 Text(entry.title).font(.system(size: 12, weight: .medium)).lineLimit(1)
                 Text([entry.extraction?.merchant ?? entry.source.label, entry.extraction?.transactionDate ?? entry.createdAt.formatted(date: .abbreviated, time: .shortened)].joined(separator: "  ·  "))
                     .font(.system(size: 10)).foregroundStyle(Palette.secondary).lineLimit(1)
+                if !model.linkedEvidence(for: entry).isEmpty {
+                    Text("已关联 \(model.linkedEvidence(for: entry).count) 张补充凭据 · 金额仅计一次")
+                        .font(.system(size: 9)).foregroundStyle(Palette.green)
+                }
             }
             Spacer()
             StateBadge(state: entry.state)
@@ -233,7 +255,7 @@ struct ContentView: View {
             Text("原图留在本机 · 文字经同意发送至 MaaS · AI 结果由你确认")
                 .font(.system(size: 9))
             Spacer()
-            Text("MVP  /  0.1").font(.system(size: 8, design: .monospaced))
+            Text("MVP  /  0.3").font(.system(size: 8, design: .monospaced))
         }.foregroundStyle(Palette.secondary.opacity(0.85))
     }
 

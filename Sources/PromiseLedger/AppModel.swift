@@ -5,20 +5,31 @@ import LedgerCore
 import LedgerMac
 
 enum LedgerSection: String, CaseIterable, Identifiable {
-    case all = "全部账单", review = "待我确认", confirmed = "已入账"
+    case all = "全部账单", review = "待我确认", confirmed = "已入账", reminders = "待处理账单"
     var id: String { rawValue }
     var symbol: String {
-        switch self { case .all: return "square.grid.2x2"; case .review: return "checkmark.bubble"; case .confirmed: return "checkmark.seal" }
+        switch self {
+        case .all: return "square.grid.2x2"
+        case .review: return "checkmark.bubble"
+        case .confirmed: return "checkmark.seal"
+        case .reminders: return "calendar.badge.clock"
+        }
     }
 }
 
 @MainActor final class AppModel: ObservableObject {
     @Published var entries: [LedgerEntry] = []
+    @Published var reminders: [LedgerReminder] = []
+    @Published var reminderPeriod: ReminderPeriod = .today
+    @Published var showOpenReminder = true
+    @Published var reminderOnOpen: Bool
+    @Published private(set) var calendarNow = Date()
     @Published var selection: String?
     @Published var section: LedgerSection = .all
     @Published var search = ""
     @Published var activity: String?
     @Published var banner: String?
+    @Published var requestedDetailID: String?
     @Published var showConsent = false
     @Published var showSettings = false
     @Published var modelName = "未配置"
@@ -39,18 +50,66 @@ enum LedgerSection: String, CaseIterable, Identifiable {
         self.dataRoot = dataRoot
         self.defaults = defaults
         self.isPreview = isPreview
+        self.reminderOnOpen = isPreview || defaults.object(forKey: "reminders.showOnOpen.v1") == nil
+            ? true : defaults.bool(forKey: "reminders.showOnOpen.v1")
     }
 
     var consentGranted: Bool { isPreview ? previewConsent : defaults.bool(forKey: "aiTextConsent.v1") }
     var selectedEntry: LedgerEntry? { entries.first { $0.id == selection } }
-    var reviewCount: Int { entries.filter { $0.state == .needsReview }.count }
+    var reviewCount: Int { entries.filter { [.needsReview, .duplicateReview].contains($0.state) }.count }
     var confirmedCount: Int { entries.filter { $0.state == .confirmed }.count }
     var queueCount: Int { entries.filter { $0.state == .queued || $0.state == .processing }.count }
+    var agenda: ReminderAgenda { ReminderAgenda(reminders: reminders, now: calendarNow) }
+    var shouldShowOpenReminder: Bool { reminderOnOpen && showOpenReminder && !agenda.pending.isEmpty }
+
+    func updateCalendar() { calendarNow = Date() }
+    func windowOpened() async {
+        guard initialized else { return }
+        updateCalendar()
+        do { try await reload(); showOpenReminder = true }
+        catch { banner = error.localizedDescription }
+    }
+    func setReminderOnOpen(_ enabled: Bool) {
+        reminderOnOpen = enabled
+        if !isPreview { defaults.set(enabled, forKey: "reminders.showOnOpen.v1") }
+    }
+    func showReminders(_ period: ReminderPeriod = .today) {
+        reminderPeriod = period
+        section = .reminders
+    }
+    func canonicalEntry(for id: String) -> LedgerEntry? {
+        var current = id
+        var visited = Set<String>()
+        while visited.insert(current).inserted, let entry = entries.first(where: { $0.id == current }) {
+            if let target = entry.duplicateOf { current = target } else { return entry }
+        }
+        return nil
+    }
+    func saveReminder(_ draft: ReminderDraft, title: String, dueDate: String?) async -> Bool {
+        guard let database else { return false }
+        do {
+            if let id = draft.existingID {
+                try await database.editReminder(id: id, title: title, dueDate: dueDate)
+                banner = "待办已更新，新的日期将用于客户端提示。"
+            } else {
+                let stored = try await database.addReminder(entryID: draft.entryID, title: title, dueDate: dueDate, sourceQuote: draft.sourceQuote)
+                banner = stored.status == .pending ? "待办已保存，相同订单、事项和日期不会重复添加。" : "已有相同待办，状态为「\(stored.status.label)」，未重新加入提醒；可在历史中恢复。"
+            }
+            try await reload()
+            return true
+        } catch { banner = error.localizedDescription; return false }
+    }
+    func setReminderStatus(_ reminder: LedgerReminder, _ status: ReminderStatus) async {
+        guard let database else { return }
+        do { try await database.setReminderStatus(id: reminder.id, status: status); try await reload() }
+        catch { banner = error.localizedDescription }
+    }
     var filteredEntries: [LedgerEntry] {
         entries.filter { entry in
-            let matchesSection = section == .all || (section == .review && entry.state == .needsReview) ||
+            guard entry.state != .duplicate else { return false }
+            let matchesSection = section == .all || (section == .review && [.needsReview, .duplicateReview].contains(entry.state)) ||
                 (section == .confirmed && entry.state == .confirmed)
-            let haystack = [entry.title, entry.extraction?.merchant ?? "", entry.extraction?.orderID ?? ""].joined(separator: " ")
+            let haystack = [entry.title, entry.extraction?.merchant ?? "", entry.extraction?.platform ?? "", entry.extraction?.orderID ?? ""].joined(separator: " ")
             return matchesSection && (search.isEmpty || haystack.localizedCaseInsensitiveContains(search))
         }
     }
@@ -73,6 +132,7 @@ enum LedgerSection: String, CaseIterable, Identifiable {
         initialized = true
         do {
             database = try LedgerDatabase(root: dataRoot)
+            if isPreview && CommandLine.arguments.contains("--preview-reminders") { try await seedReminderPreview() }
             try await reload()
         } catch { banner = error.localizedDescription }
         reloadConfiguration()
@@ -136,7 +196,8 @@ enum LedgerSection: String, CaseIterable, Identifiable {
     private func enqueue(_ image: PreparedImage, source: EntrySource) async throws {
         guard let database else { return }
         if let existing = entries.first(where: { $0.imageHash == image.hash }) {
-            selection = existing.id
+            selection = existing.duplicateOf ?? existing.id
+            if ![.queued, .processing].contains(existing.state) { requestedDetailID = selection }
             banner = "这张图片已经在账本里，已为你打开原记录。"
             openWindow?()
             return
@@ -200,7 +261,9 @@ enum LedgerSection: String, CaseIterable, Identifiable {
             activity = "\(configuration.model) 正在整理账单…"
             let result = try await AIClient(configuration: configuration).extract(ocrText: text)
             entry.extraction = result; entry.state = .needsReview; entry.model = configuration.model
-            try await database.save(entry); try await reload()
+            entry.promptVersion = LedgerSystemPrompt.version
+            let stored = try await database.save(entry); try await reload()
+            reportDeduplication(stored)
         } catch {
             entry.state = .failed; entry.error = error.localizedDescription
             do { try await database.save(entry); try await reload() }
@@ -210,10 +273,10 @@ enum LedgerSection: String, CaseIterable, Identifiable {
     }
 
     func retry(_ entry: LedgerEntry) {
-        guard entry.state != .processing, entry.state != .confirmed, let database else { return }
+        guard [.failed, .queued, .needsReview].contains(entry.state), let database else { return }
         Task {
             do {
-                var queued = entry; queued.state = .queued; queued.error = nil
+                var queued = entry; queued.state = .queued; queued.error = nil; queued.distinctFingerprint = nil
                 try await database.save(queued); try await reload()
                 startOrRequestConsent()
             } catch { banner = error.localizedDescription }
@@ -234,9 +297,43 @@ enum LedgerSection: String, CaseIterable, Identifiable {
         }
         do {
             var updated = entry; updated.extraction = draft; updated.state = .confirmed
-            try await database.save(updated); try await reload()
+            let stored = try await database.save(updated); try await reload()
+            if stored.state != .confirmed { reportDeduplication(stored); return false }
             return true
         } catch { banner = error.localizedDescription; return false }
+    }
+
+    func linkedEvidence(for entry: LedgerEntry) -> [LedgerEntry] {
+        entries.filter { $0.duplicateOf == entry.id }.sorted { $0.createdAt < $1.createdAt }
+    }
+
+    func linkDuplicate(_ entry: LedgerEntry, to target: String) async {
+        guard let database else { return }
+        do {
+            let stored = try await database.linkDuplicate(entry.id, to: target)
+            try await reload()
+            reportDeduplication(stored)
+        } catch { banner = error.localizedDescription }
+    }
+
+    func keepSeparate(_ entry: LedgerEntry) async {
+        guard let database else { return }
+        do {
+            try await database.keepAsSeparateOrder(entry.id)
+            try await reload()
+            banner = "已记录你对“不同订单”的判断，请继续核对字段后入账。字段或候选记录变化时会重新检查。"
+        } catch { banner = error.localizedDescription }
+    }
+
+    private func reportDeduplication(_ entry: LedgerEntry) {
+        if let original = entry.duplicateOf {
+            selection = original
+            requestedDetailID = original
+            banner = "识别到同一订单：新截图已关联为补充凭据，不会重复计入金额，也不会覆盖已确认字段。"
+            openWindow?()
+        } else if entry.state == .duplicateReview {
+            banner = "发现疑似重复订单。请先比较已有记录，选择关联原订单或明确确认是另一笔，再入账。"
+        }
     }
 
     func imageURL(for entry: LedgerEntry) -> URL {
@@ -246,5 +343,35 @@ enum LedgerSection: String, CaseIterable, Identifiable {
     private func reload() async throws {
         guard let database else { return }
         entries = try await database.list()
+        reminders = try await database.reminders()
+        updateCalendar()
+    }
+
+    /// Explicit offline UI fixtures in a new temporary preview space, never real AI output.
+    private func seedReminderPreview() async throws {
+        guard isPreview, let database else { return }
+        let fixture = dataRoot.appendingPathComponent("synthetic-receipt.png")
+        try ImagePipeline.makeDiagnosticReceipt(at: fixture)
+        let images = await database.imagesDirectory
+        let prepared = try ImagePipeline.prepare(url: fixture, imagesDirectory: images)
+        let text = try ImagePipeline.recognize(url: images.appendingPathComponent(prepared.filename))
+        let order = try await database.save(LedgerEntry(source: .image, imageFilename: prepared.filename,
+            imageHash: prepared.hash, state: .confirmed, ocrText: text,
+            extraction: BillExtraction(title: "演示订单 · 合成样例（非 AI 识别）", amount: "129.00", currency: "CNY",
+                promises: [LedgerPromise(text: "一年保修", sourceQuote: "Warranty: 1 year")])))
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        for (offset, title) in [(-1, "演示：逾期退款跟进"), (0, "演示：核对今日退款"), (2, "演示：申请价保"), (45, "演示：稍后核验保修")] {
+            let due = formatter.string(from: calendar.date(byAdding: .day, value: offset, to: Date())!)
+            try await database.addReminder(entryID: order.id, title: title, dueDate: due)
+        }
+        try await database.addReminder(entryID: order.id, title: "演示：待确定跟进日期", dueDate: nil)
+        let completed = try await database.addReminder(entryID: order.id, title: "演示：已完成收货核验", dueDate: formatter.string(from: Date()))
+        try await database.setReminderStatus(id: completed.id, status: .completed)
     }
 }
