@@ -13,7 +13,7 @@ done
 swiftc -parse-as-library \
   -I "$binary_directory/Modules" -I "$project_root/Sources/CSQLite" \
   "${app_sources[@]}" \
-  "$project_root/Tests/LedgerAppTests/main.swift" \
+  "$project_root/Tests/LedgerAppTests/"*.swift \
   "$binary_directory/LedgerCore.build/"*.swift.o \
   "$binary_directory/LedgerMac.build/"*.swift.o \
   -o "$binary_directory/LedgerAppTests"

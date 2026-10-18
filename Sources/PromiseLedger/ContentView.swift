@@ -24,6 +24,8 @@ struct ContentView: View {
                         statistics
                         intake
                     }
+                    ImportPreviewView(selection: model.importSelection)
+                    ImportResultsView(batch: model.importBatch)
                     if let banner = model.banner { bannerView(banner) }
                     if let activity = model.activity { processingView(activity) }
                     if model.section != .reminders { records }
@@ -177,7 +179,7 @@ struct ContentView: View {
                 }.padding(21).frame(maxWidth: .infinity, minHeight: 80)
                     .background(.white.opacity(0.8), in: RoundedRectangle(cornerRadius: 13))
                     .overlay(RoundedRectangle(cornerRadius: 13).stroke(Palette.border))
-            }.buttonStyle(.plain).disabled(model.isImporting || !model.initialized)
+            }.buttonStyle(.plain).disabled(model.isImporting || model.importSelection.isPresented || !model.initialized)
         }
     }
 
@@ -308,19 +310,20 @@ struct ContentView: View {
     }
 
     private func receiveDrop(_ providers: [NSItemProvider]) -> Bool {
-        guard providers.count <= 10 else { model.banner = "每次最多导入 10 张图片。"; return false }
-        Task { @MainActor in
-            var urls: [URL] = []
-            for provider in providers {
-                let url: URL? = await withCheckedContinuation { continuation in
-                    provider.loadDataRepresentation(forTypeIdentifier: UTType.fileURL.identifier) { data, _ in
-                        continuation.resume(returning: data.flatMap { URL(dataRepresentation: $0, relativeTo: nil) })
+        let candidates = providers.enumerated().map { index, provider in
+            ImportCandidate(name: provider.suggestedName ?? "拖入项目 \(index + 1)") {
+                try await withCheckedThrowingContinuation { continuation in
+                    provider.loadDataRepresentation(forTypeIdentifier: UTType.fileURL.identifier) { data, error in
+                        if let error { continuation.resume(throwing: error); return }
+                        guard let data, let url = URL(dataRepresentation: data, relativeTo: nil) else {
+                            continuation.resume(throwing: LedgerError.message("文件地址无法读取，请从 Finder 重新拖入图片。"))
+                            return
+                        }
+                        continuation.resume(returning: url)
                     }
                 }
-                if let url { urls.append(url) }
             }
-            if !urls.isEmpty { model.importImages(urls) }
         }
-        return true
+        return model.importCandidates(candidates)
     }
 }

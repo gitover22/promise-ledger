@@ -4,16 +4,16 @@ import CSQLite
 import LedgerCore
 import LedgerMac
 
-private struct TestFailure: LocalizedError {
+struct TestFailure: LocalizedError {
     let message: String
     var errorDescription: String? { message }
 }
 
-@MainActor private func expect(_ condition: @autoclosure () -> Bool, _ message: String) throws {
+@MainActor func expect(_ condition: @autoclosure () -> Bool, _ message: String) throws {
     guard condition() else { throw TestFailure(message: message) }
 }
 
-@MainActor private func waitUntil(timeout: Duration = .seconds(2), _ condition: () -> Bool) async throws {
+@MainActor func waitUntil(timeout: Duration = .seconds(2), _ condition: () -> Bool) async throws {
     let deadline = ContinuousClock.now.advanced(by: timeout)
     while ContinuousClock.now < deadline {
         if condition() { return }
@@ -43,6 +43,10 @@ private struct TestFailure: LocalizedError {
             ("initialization failure can recover", initializationRecovery),
             ("capture reentry, consent, persistence and duplicate", captureLifecycle),
             ("capture failure permits retry", captureRecovery),
+            ("manual preview cancellation and confirmation preserve consent", manualImportWorkflow),
+            ("manual import and capture share one image entry", concurrentManualImportAndCapture),
+            ("duplicate import resolves to confirmed canonical order", duplicateImportPreservesConfirmedOrder),
+            ("changed preview files fail without blocking valid imports", changedManualImportFiles),
             ("captured receipt runs real OCR and honors revoked consent", capturedReceiptOCR),
             ("review corrections validate and persist exact money", reviewConfirmation),
             ("missing review currency defaults without rewriting extraction", reviewCurrencyDefault),

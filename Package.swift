@@ -7,7 +7,8 @@ let package = Package(
     products: [
         .executable(name: "PromiseLedger", targets: ["PromiseLedger"]),
         .executable(name: "LedgerCheck", targets: ["LedgerCheck"]),
-        .executable(name: "LedgerTests", targets: ["LedgerTests"])
+        .executable(name: "LedgerTests", targets: ["LedgerTests"]),
+        .executable(name: "ImportTests", targets: ["ImportTests"])
     ],
     targets: [
         .systemLibrary(name: "CSQLite"),
@@ -15,6 +16,7 @@ let package = Package(
         .target(name: "LedgerMac", dependencies: ["LedgerCore"]),
         .executableTarget(name: "PromiseLedger", dependencies: ["LedgerCore", "LedgerMac"]),
         .executableTarget(name: "LedgerCheck", dependencies: ["LedgerCore", "LedgerMac"]),
-        .executableTarget(name: "LedgerTests", dependencies: ["LedgerCore", "CSQLite"], path: "Tests/LedgerCoreTests")
+        .executableTarget(name: "LedgerTests", dependencies: ["LedgerCore", "CSQLite"], path: "Tests/LedgerCoreTests"),
+        .executableTarget(name: "ImportTests", dependencies: ["LedgerMac"], path: "Tests/ImportTests")
     ]
 )
