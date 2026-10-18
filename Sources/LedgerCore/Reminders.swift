@@ -37,7 +37,7 @@ public struct LedgerReminder: Identifiable, Codable, Equatable, Sendable {
             throw LedgerError.message("请填写 1–200 字的待办事项。")
         }
         if let date = dueDate, !BillExtraction.isValidDate(date) {
-            throw LedgerError.message("处理日期请使用 YYYY-MM-DD，或留空待定。")
+            throw LedgerError.message("跟进日期请使用 YYYY-MM-DD，也可以留空。")
         }
         return result
     }

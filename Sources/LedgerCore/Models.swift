@@ -16,9 +16,9 @@ public enum EntryState: String, Codable, Sendable {
         case .processing: return "正在识别"
         case .needsReview: return "待确认"
         case .confirmed: return "已入账"
-        case .failed: return "识别未完成"
-        case .duplicate: return "已关联同一订单"
-        case .duplicateReview: return "疑似重复，待核对"
+        case .failed: return "识别失败"
+        case .duplicate: return "已关联"
+        case .duplicateReview: return "疑似重复"
         }
     }
 }
@@ -126,7 +126,7 @@ public struct BillExtraction: Codable, Equatable, Sendable {
         if result.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { result.title = "待核对账单" }
         if let orderID = result.orderID, !OrderIdentity.hasOrderEvidence(orderID, quote: result.orderIDSourceQuote, ocr: ocrText) {
             result.orderIDSourceQuote = nil
-            result.warnings.append("订单号缺少明确的订单原文依据，不能据此自动合并，请人工核对。")
+            result.warnings.append("无法从原文确认订单号，请核对后再关联订单。")
         }
         if let status = ["已支付", "待支付", "已退款", "已取消", "未知"].first(where: { $0 == result.paymentStatus }) {
             result.paymentStatus = status
@@ -146,7 +146,7 @@ public struct BillExtraction: Codable, Equatable, Sendable {
             }
             return verified
         }
-        if result.promises.count != promises.count { result.warnings.append("缺少原文依据的承诺已被过滤。") }
+        if result.promises.count != promises.count { result.warnings.append("部分承诺未能匹配原文，未保存。") }
         return result
     }
 
@@ -189,7 +189,7 @@ public struct LedgerEntry: Identifiable, Sendable {
         self.duplicateOf = duplicateOf; self.duplicateCandidates = duplicateCandidates
         self.distinctFingerprint = distinctFingerprint; self.promptVersion = promptVersion
     }
-    public var title: String { extraction?.title ?? (source == .screenshot ? "一张新的屏幕截图" : "一张新的订单图片") }
+    public var title: String { extraction?.title ?? (source == .screenshot ? "屏幕截图" : "导入图片") }
 }
 
 public enum ExtractionDecoder {

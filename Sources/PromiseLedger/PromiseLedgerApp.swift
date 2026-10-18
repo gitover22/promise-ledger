@@ -44,7 +44,7 @@ import LedgerMac
         self.window = window
         model.openWindow = { [weak self] in self?.showWindow() }
         model.$activity.sink { [weak self] activity in
-            self?.activityItem?.title = activity ?? "待命中 · 只在你操作时识别"
+            self?.activityItem?.title = activity ?? "就绪"
             self?.statusItem?.button?.toolTip = activity ?? "AI 账本 · ⌃⌥L 全屏截图"
         }.store(in: &subscriptions)
         showWindow()
@@ -82,13 +82,13 @@ import LedgerMac
         let menu = NSMenu()
         let title = NSMenuItem(title: "你的智能 AI 账本", action: nil, keyEquivalent: "")
         menu.addItem(title)
-        let activity = NSMenuItem(title: "待命中 · 只在你操作时识别", action: nil, keyEquivalent: "")
+        let activity = NSMenuItem(title: "就绪", action: nil, keyEquivalent: "")
         menu.addItem(activity); activityItem = activity
         menu.addItem(.separator())
         menu.addItem(item("打开账本", #selector(showWindow)))
-        menu.addItem(item("查看待处理账单", #selector(reminders)))
-        menu.addItem(item("全屏截图并识别         ⌃⌥L", #selector(capture)))
-        menu.addItem(item("导入订单图片…", #selector(importImages)))
+        menu.addItem(item("查看待办", #selector(reminders)))
+        menu.addItem(item("截图识别         ⌃⌥L", #selector(capture)))
+        menu.addItem(item("导入图片…", #selector(importImages)))
         menu.addItem(.separator())
         menu.addItem(item("设置与隐私…", #selector(settings)))
         menu.addItem(item("退出 AI 账本", #selector(quit)))

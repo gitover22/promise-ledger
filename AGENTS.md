@@ -1,6 +1,7 @@
 # Promise Ledger development
 
 - This is a native macOS SwiftUI/AppKit application, not a web app. Keep the application lightweight and avoid third-party runtimes unless explicitly justified.
+- UI copy should read like a shipping utility: short functional headings, consistent terms, direct action labels, and specific state/error guidance. Avoid slogans, personification, repeated AI branding, exaggerated reassurance, roadmap notes, or implementation jargon on primary screens. Keep explicit data-transmission consent and meaningful limitations; disclose technical details progressively. Do not rewrite user-entered text or saved AI results as a copy-editing side effect.
 - Use the user's existing Rednote MaaS configuration at `~/.config/promise-ledger/model.json`; read its accompanying README before changing AI integration. Default model is GPT-5.6 Sol. Read headers, application ID, and streaming defaults from that file.
 - The existing credential is in macOS Keychain, service `promise-ledger.maas.api-key`, account `promise-ledger`. Read it inside the calling process, capturing stdout. Never print, persist, commit, or send it to any unconfigured service. Do not ask for this saved key again.
 - Include the configured `x-maas-app-id` (currently `seal`) and the actual `x-maas-scenario` (`bill-extraction` for this product). Do not replace the default model because a different model was used in a diagnostic example.

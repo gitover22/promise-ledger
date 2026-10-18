@@ -2,6 +2,23 @@
 
 记录日期：2026-10-18。代码基准：`636f9ba`；P0 批量反馈为 `0a4b616`，P1 预览确认为 `1306d54`。本文件整理此前验收结果，不表示文档更新时重新执行了全部测试。
 
+## 与 main 集成验证（2026-10-18）
+
+本次将 `main` 的 `59c5d33` 合入手工导入分支，保留初始化重试、存储失败暂停、快捷键事件过滤、币种复核草稿及 0.3.1 界面文案。上传与截图共用 `LedgerDatabase.enqueue`，不再通过界面缓存判定同图；批次结果复用数据库返回的记录 ID，并将补充凭据定位到原订单。
+
+本次重新执行的离线检查：
+
+- `swift run LedgerTests`：42/42 通过。
+- `swift run ImportTests`：全部导入专项测试通过。
+- `./scripts/test-capture.sh`：14/14 通过，包含新增的四项真实 AppModel 集成用例：预览/取消/确认与授权门控、上传和截图同图并发、重复导入已确认订单的关联凭据、预览后文件变化的逐项处理。
+- `./scripts/test-hotkey.sh`：8/8 通过，只向测试进程发送 Carbon 事件，不截取桌面。
+- `swift run LedgerCheck`：合成收据的实际 Vision OCR 和 SQLite 诊断通过，真实模型测试未启用。
+- `./scripts/build.sh` 与 `codesign --verify --deep --strict 'dist/Promise Ledger.app'`：release 打包及 ad-hoc 签名完整性检查通过。
+
+新增集成测试位于 `Tests/LedgerAppTests/ImportIntegrationTests.swift`，由截图测试脚本一并编译运行。测试使用临时账本与合成图片，没有读取真实账单、读取 API Key 或调用模型。未重做真实 Finder 跨窗口拖拽、系统授权拒绝、多显示器或实际手机 HEIC 验收，不能将上述自动检查等同于这些桌面交互均已验证。下文原有 40/40 等历史记录仍对应其注明的旧基准。
+
+当前界面的操作名称为「导入图片」「同意并识别」「确认入账」，与 main 保持一致；下文历史步骤中的旧名称按相应操作理解。
+
 ## 交付范围与协作边界
 
 手工上传链路为：文件选择或 Finder 拖拽 → 只读预览 → 用户确认 → 本地保存与图片去重 → 用户授权后 OCR / AI → 人工核对入账。

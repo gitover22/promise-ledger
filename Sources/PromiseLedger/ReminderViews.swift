@@ -31,7 +31,7 @@ struct OpenReminderCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Label("打开账本，也把这些事放在心上。", systemImage: "sun.max")
+                Label("待办概览", systemImage: "calendar")
                     .font(.system(size: 13, weight: .semibold))
                 Spacer()
                 Button { model.showOpenReminder = false } label: {
@@ -54,16 +54,16 @@ struct OpenReminderCard: View {
             HStack {
                 Text(summary).font(.system(size: 10)).foregroundStyle(Palette.secondary)
                 Spacer()
-                Button("查看待办 →") { model.showReminders(.all) }
+                Button("查看全部") { model.showReminders(.all) }
                     .font(.system(size: 11, weight: .medium)).buttonStyle(.plain)
             }
         }.padding(19).foregroundStyle(Palette.green)
             .background(Palette.paleGreen.opacity(0.65), in: RoundedRectangle(cornerRadius: 13))
     }
     private var summary: String {
-        var parts = ["本周、本月包含今天，不累加"]
-        if !model.agenda.overdue.isEmpty { parts.append("另有 \(model.agenda.overdue.count) 项逾期") }
-        if !model.agenda.undated.isEmpty { parts.append("\(model.agenda.undated.count) 项日期待定") }
+        var parts = ["本周、本月均包含今天"]
+        if !model.agenda.overdue.isEmpty { parts.append("逾期 \(model.agenda.overdue.count) 项") }
+        if !model.agenda.undated.isEmpty { parts.append("未定日期 \(model.agenda.undated.count) 项") }
         return parts.joined(separator: " · ")
     }
 }
@@ -78,8 +78,8 @@ struct ReminderBoard: View {
         VStack(alignment: .leading, spacing: 22) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("把承诺，变成不遗漏的小事。").font(.system(size: 27, weight: .semibold))
-                    Text("今天、本周、本月，知道什么需要处理。完成一件，就放下一件。")
+                    Text("待办事项").font(.system(size: 27, weight: .semibold))
+                    Text("查看退款跟进、价保申请等需要处理的事项。")
                         .font(.system(size: 12)).foregroundStyle(Palette.secondary)
                 }
                 Spacer()
@@ -91,6 +91,7 @@ struct ReminderBoard: View {
                     .menuStyle(.borderlessButton).fixedSize().padding(10)
                     .background(.white, in: RoundedRectangle(cornerRadius: 9))
                     .disabled(confirmedOrders.isEmpty)
+                    .help("选择一笔已入账账单，为它添加待办。")
             }
             HStack(spacing: 9) {
                 ForEach(ReminderPeriod.allCases) { period in
@@ -102,33 +103,38 @@ struct ReminderBoard: View {
                     }.buttonStyle(.plain)
                 }
             }
-            Text("按本机日期 \(agenda.today) · 周一至周日 / 自然月 · 逾期与日期待定单列，不重复展示")
+            Text("\(agenda.today) · 本周为周一至周日，本月为自然月")
                 .font(.system(size: 10)).foregroundStyle(Palette.secondary)
+                .help("本周、本月包含今天；逾期和未定日期的事项单独列出。")
             if !agenda.overdue.isEmpty {
-                group("已逾期 · 仍需处理", reminders: agenda.overdue, overdue: true)
+                group("已逾期", reminders: agenda.overdue, overdue: true)
             }
             VStack(alignment: .leading, spacing: 12) {
                 let upcoming = agenda.items(in: model.reminderPeriod)
                 if upcoming.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
-                        Label(model.reminderPeriod.rawValue + "暂无已排期待办", systemImage: "checkmark.circle")
+                        Label(emptyTitle, systemImage: "checkmark.circle")
                             .font(.system(size: 16, weight: .medium)).foregroundStyle(Palette.green)
-                        Text(confirmedOrders.isEmpty ? "先导入并确认一笔账单，再从承诺或权益添加待办。" : "在账单详情中，把需要处理的承诺加入待办；日期不明确时可以先留空。")
+                        Text(confirmedOrders.isEmpty ? "账单入账后，可在详情中添加待办。" : "可在账单详情中添加，或点击「新建待办」。")
                             .font(.system(size: 11)).foregroundStyle(Palette.secondary).lineSpacing(4)
                     }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
                         .background(.white.opacity(0.65), in: RoundedRectangle(cornerRadius: 12))
-                } else { group(model.reminderPeriod == .all ? "已排期待办" : model.reminderPeriod.rawValue + "待处理", reminders: upcoming) }
+                } else { group(model.reminderPeriod == .all ? "已设日期" : model.reminderPeriod.rawValue + "待办", reminders: upcoming) }
             }
-            if !agenda.undated.isEmpty { group("日期待定 · 不自动推算截止日", reminders: agenda.undated) }
+            if !agenda.undated.isEmpty { group("未定日期", reminders: agenda.undated) }
             if !agenda.history.isEmpty {
                 DisclosureGroup("已完成与已取消  \(agenda.history.count)") {
                     VStack(spacing: 10) { ForEach(agenda.history) { reminder in row(reminder) } }.padding(.top, 12)
                 }.font(.system(size: 12)).tint(Palette.green)
             }
-            Text("仅在客户端内展示你确认过的待办，不代表付款状态改变；未接入系统通知与邮件发送。")
+            Text("完成待办不会更改账单的付款状态。")
                 .font(.system(size: 10)).foregroundStyle(Palette.secondary).lineSpacing(4)
         }
         .sheet(item: $editor) { ReminderEditor(draft: $0).environmentObject(model) }
+    }
+
+    private var emptyTitle: String {
+        model.reminderPeriod == .all ? "暂无已设日期的待办" : model.reminderPeriod.rawValue + "暂无待办"
     }
 
     private func group(_ title: String, reminders: [LedgerReminder], overdue: Bool = false) -> some View {
@@ -156,7 +162,7 @@ struct ReminderBoard: View {
                 Text(model.canonicalEntry(for: reminder.entryID)?.title ?? "关联订单")
                     .font(.system(size: 10)).foregroundStyle(Palette.secondary)
                 HStack(spacing: 12) {
-                    Label(reminder.dueDate ?? "日期待定", systemImage: "calendar")
+                    Label(reminder.dueDate ?? "未定日期", systemImage: "calendar")
                         .foregroundStyle(overdue ? Palette.amber : Palette.secondary)
                     if reminder.status != .pending { Text(reminder.status.label).foregroundStyle(Palette.secondary) }
                     Button("查看凭据") { model.requestedDetailID = reminder.entryID }
@@ -165,12 +171,12 @@ struct ReminderBoard: View {
             }
             Spacer(minLength: 10)
             Menu {
-                Button("编辑事项与日期") { editor = ReminderDraft(reminder: reminder) }
+                Button("编辑待办") { editor = ReminderDraft(reminder: reminder) }
                 if reminder.status == .pending {
                     Button("标记完成") { Task { await model.setReminderStatus(reminder, .completed) } }
                     Button("取消待办（保留历史）") { Task { await model.setReminderStatus(reminder, .cancelled) } }
                 } else {
-                    Button("恢复为待处理") { Task { await model.setReminderStatus(reminder, .pending) } }
+                    Button("恢复待办") { Task { await model.setReminderStatus(reminder, .pending) } }
                 }
             } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).fixedSize()
                 .accessibilityLabel("待办操作：" + reminder.title)
@@ -196,7 +202,7 @@ struct ReminderEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack {
-                Text(draft.existingID == nil ? "把这件事记在待办里" : "编辑待办")
+                Text(draft.existingID == nil ? "新建待办" : "编辑待办")
                     .font(.system(size: 21, weight: .semibold))
                 Spacer()
                 Button("取消") { dismiss() }.buttonStyle(QuietButtonStyle()).disabled(saving)
@@ -204,34 +210,34 @@ struct ReminderEditor: View {
             Text(model.canonicalEntry(for: draft.entryID)?.title ?? "关联订单")
                 .font(.system(size: 12)).foregroundStyle(Palette.secondary)
             VStack(alignment: .leading, spacing: 8) {
-                Text("需要你做什么").font(.system(size: 12, weight: .medium))
+                Text("事项").font(.system(size: 12, weight: .medium))
                 TextField("例如：确认退款是否到账", text: $title).textFieldStyle(.roundedBorder)
             }
             VStack(alignment: .leading, spacing: 8) {
-                Text("处理日期 · 由你确认").font(.system(size: 12, weight: .medium))
+                Text("跟进日期（选填）").font(.system(size: 12, weight: .medium))
                 HStack {
-                    TextField("YYYY-MM-DD，可留空待定", text: $dueDate).textFieldStyle(.roundedBorder)
+                    TextField("YYYY-MM-DD", text: $dueDate).textFieldStyle(.roundedBorder)
                     Button("今天") { dueDate = model.agenda.today }
-                    Button("待定") { dueDate = "" }
+                    Button("清除") { dueDate = "" }
                 }
-                Text("“三个工作日内”等相对承诺不自动计算日期。你可以设置一个跟进日期，但它不等于商家承诺的截止日。")
+                Text("未注明具体日期的承诺不会自动换算。跟进日期仅用于提醒，不作为商家承诺的截止日期。")
                     .font(.system(size: 10)).foregroundStyle(Palette.secondary).lineSpacing(4)
             }
             if let quote = draft.sourceQuote {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("承诺依据 · 请核对适用条件").font(.system(size: 11, weight: .medium))
+                    Text("相关原文").font(.system(size: 11, weight: .medium))
                     Text(quote).font(.system(size: 11)).textSelection(.enabled).lineSpacing(4)
                     if let conditions = draft.conditions {
-                        Text("条件：" + conditions).font(.system(size: 11)).foregroundStyle(Palette.secondary)
+                        Text("适用条件：" + conditions).font(.system(size: 11)).foregroundStyle(Palette.secondary)
                     }
                 }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
                     .background(Palette.paleGreen.opacity(0.5), in: RoundedRectangle(cornerRadius: 9))
             }
             if let error { Text(error).font(.system(size: 11)).foregroundStyle(Palette.amber) }
             HStack {
-                Text("保存后在客户端内提示，不发送邮件。").font(.system(size: 10)).foregroundStyle(Palette.secondary)
+                Text("提醒仅在应用内显示。").font(.system(size: 10)).foregroundStyle(Palette.secondary)
                 Spacer()
-                Button(saving ? "保存中…" : "确认并保存") {
+                Button(saving ? "正在保存…" : "保存") {
                     saving = true
                     Task {
                         let date = dueDate.trimmingCharacters(in: .whitespacesAndNewlines)
