@@ -14,6 +14,7 @@ public actor LedgerDatabase {
         connection = try SQLiteLedger(root: root)
     }
     public func list() throws -> [LedgerEntry] { try connection.list() }
+    public func enqueue(_ entry: LedgerEntry) throws -> String { try connection.enqueue(entry) }
     public func reminders() throws -> [LedgerReminder] { try connection.reminders() }
     @discardableResult public func addReminder(entryID: String, title: String, dueDate: String?, sourceQuote: String? = nil) throws -> LedgerReminder {
         try connection.addReminder(entryID: entryID, title: title, dueDate: dueDate, sourceQuote: sourceQuote)
@@ -141,6 +142,19 @@ private final class SQLiteLedger {
                 promptVersion: string(statement, 14)))
         }
         return result
+    }
+
+    func enqueue(_ entry: LedgerEntry) throws -> String {
+        let statement = try prepare("SELECT id FROM entries WHERE image_hash=?")
+        defer { sqlite3_finalize(statement) }
+        bind(entry.imageHash, to: statement, at: 1)
+        let code = sqlite3_step(statement)
+        if code == SQLITE_ROW {
+            guard let identifier = string(statement, 0) else { throw databaseError() }
+            return identifier
+        }
+        guard code == SQLITE_DONE else { throw databaseError() }
+        return try save(entry).id
     }
 
     func reminders() throws -> [LedgerReminder] {

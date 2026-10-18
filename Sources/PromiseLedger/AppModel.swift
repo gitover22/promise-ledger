@@ -36,7 +36,9 @@ enum LedgerSection: String, CaseIterable, Identifiable {
     @Published var capturePermission = ScreenCaptureService.hasPermission
     @Published var isCapturing = false
     @Published var isImporting = false
+    @Published private(set) var isInitializing = false
     @Published private(set) var initialized = false
+    @Published private(set) var queuePaused = false
     let dataRoot: URL
     let isPreview: Bool
     var openWindow: (() -> Void)?
@@ -44,12 +46,23 @@ enum LedgerSection: String, CaseIterable, Identifiable {
     private var worker: Task<Void, Never>?
     private let hotKey = GlobalHotKey()
     private let defaults: UserDefaults
+    private let configurationURL: URL
+    private let captureImage: @MainActor () async throws -> CGImage
+    private let extractBill: @MainActor (ModelConfiguration, String) async throws -> BillExtraction
     private var previewConsent = false
 
-    init(dataRoot: URL = LedgerDatabase.defaultRoot, defaults: UserDefaults = .standard, isPreview: Bool = false) {
+    init(dataRoot: URL = LedgerDatabase.defaultRoot, defaults: UserDefaults = .standard, isPreview: Bool = false,
+         configurationURL: URL = ModelConfiguration.defaultURL,
+         captureImage: @escaping @MainActor () async throws -> CGImage = { try await ScreenCaptureService.capture() },
+         extractBill: @escaping @MainActor (ModelConfiguration, String) async throws -> BillExtraction = { configuration, text in
+             try await AIClient(configuration: configuration).extract(ocrText: text)
+         }) {
         self.dataRoot = dataRoot
         self.defaults = defaults
         self.isPreview = isPreview
+        self.configurationURL = configurationURL
+        self.captureImage = captureImage
+        self.extractBill = extractBill
         self.reminderOnOpen = isPreview || defaults.object(forKey: "reminders.showOnOpen.v1") == nil
             ? true : defaults.bool(forKey: "reminders.showOnOpen.v1")
     }
@@ -127,27 +140,33 @@ enum LedgerSection: String, CaseIterable, Identifiable {
         return BillExtraction(amount: NSDecimalNumber(decimal: total).stringValue, currency: currencies.first ?? "CNY").formattedAmount
     }
 
-    func initialize() async {
-        guard !initialized else { return }
-        initialized = true
+    func initialize(registerHotKey: Bool = true) async {
+        guard !initialized, !isInitializing else { return }
+        isInitializing = true
+        defer { isInitializing = false }
         do {
             database = try LedgerDatabase(root: dataRoot)
             if isPreview && CommandLine.arguments.contains("--preview-reminders") { try await seedReminderPreview() }
             try await reload()
-        } catch { banner = error.localizedDescription }
+            initialized = true
+            banner = nil
+        } catch { database = nil; banner = error.localizedDescription; return }
         reloadConfiguration()
-        do { try hotKey.register { [weak self] in self?.captureScreen() } }
-        catch { banner = error.localizedDescription }
+        if registerHotKey {
+            do { try hotKey.register { [weak self] in self?.captureScreen() } }
+            catch { banner = error.localizedDescription }
+        }
     }
 
     func reloadConfiguration() {
-        do { modelName = try ModelConfiguration.load().model }
+        do { modelName = try ModelConfiguration.load(from: configurationURL).model }
         catch { modelName = "未配置"; banner = error.localizedDescription }
         capturePermission = ScreenCaptureService.hasPermission
     }
 
     func chooseImages() {
         guard !isImporting else { return }
+        guard readyDatabase() != nil else { return }
         let panel = NSOpenPanel()
         panel.title = "导入图片"
         panel.message = "选择订单截图或收据，每次最多 10 张，每张不超过 40 MB。"
@@ -158,7 +177,7 @@ enum LedgerSection: String, CaseIterable, Identifiable {
     }
 
     func importImages(_ urls: [URL]) {
-        guard !isImporting, let database else { return }
+        guard !isImporting, let database = readyDatabase() else { return }
         guard urls.count <= 10 else { banner = "每次最多导入 10 张图片，请分批导入。"; return }
         isImporting = true
         Task {
@@ -177,12 +196,12 @@ enum LedgerSection: String, CaseIterable, Identifiable {
     }
 
     func captureScreen() {
-        guard !isCapturing, let database else { return }
+        guard !isCapturing, let database = readyDatabase() else { return }
         isCapturing = true
         Task {
             defer { isCapturing = false; capturePermission = ScreenCaptureService.hasPermission }
             do {
-                let image = try await ScreenCaptureService.capture()
+                let image = try await captureImage()
                 let images = await database.imagesDirectory
                 let prepared = try await Task.detached(priority: .userInitiated) {
                     try ImagePipeline.prepare(image: image, imagesDirectory: images)
@@ -195,17 +214,25 @@ enum LedgerSection: String, CaseIterable, Identifiable {
 
     private func enqueue(_ image: PreparedImage, source: EntrySource) async throws {
         guard let database else { return }
-        if let existing = entries.first(where: { $0.imageHash == image.hash }) {
-            selection = existing.duplicateOf ?? existing.id
-            if ![.queued, .processing].contains(existing.state) { requestedDetailID = selection }
+        let entry = LedgerEntry(source: source, imageFilename: image.filename, imageHash: image.hash)
+        let identifier = try await database.enqueue(entry)
+        try await reload()
+        let existing = entries.first { $0.id == identifier }
+        selection = existing?.duplicateOf ?? identifier
+        if identifier != entry.id {
+            if let existing, ![.queued, .processing].contains(existing.state) { requestedDetailID = selection }
             banner = "图片已导入，未重复添加。"
             openWindow?()
-            return
         }
-        let entry = LedgerEntry(source: source, imageFilename: image.filename, imageHash: image.hash)
-        try await database.save(entry)
-        try await reload()
-        selection = entry.id
+    }
+
+    private func readyDatabase() -> LedgerDatabase? {
+        guard initialized, let database else {
+            if banner == nil { banner = isInitializing ? "账本正在初始化，请稍后重试。" : "账本尚未就绪，请点击「重试初始化」。" }
+            openWindow?()
+            return nil
+        }
+        return database
     }
 
     func grantConsent() {
@@ -224,25 +251,26 @@ enum LedgerSection: String, CaseIterable, Identifiable {
 
     func startOrRequestConsent() {
         guard entries.contains(where: { $0.state == .queued }) else { return }
+        guard !queuePaused else { openWindow?(); return }
         if consentGranted { beginWorker() }
         else { openWindow?(); showConsent = true }
     }
 
     private func beginWorker() {
-        guard worker == nil, consentGranted else { return }
+        guard worker == nil, consentGranted, !queuePaused else { return }
         worker = Task {
             defer { worker = nil; activity = nil }
             while consentGranted, let pending = entries.last(where: { $0.state == .queued }) {
-                await process(pending)
+                guard await process(pending) else { break }
             }
         }
     }
 
-    private func process(_ original: LedgerEntry) async {
-        guard let database else { return }
+    private func process(_ original: LedgerEntry) async -> Bool {
+        guard let database else { return false }
         var entry = original
         do {
-            let configuration = try ModelConfiguration.load()
+            let configuration = try ModelConfiguration.load(from: configurationURL)
             entry.state = .processing; entry.error = nil
             try await database.save(entry); try await reload()
             activity = "正在读取图片文字…"
@@ -256,10 +284,10 @@ enum LedgerSection: String, CaseIterable, Identifiable {
             guard consentGranted else {
                 entry.state = .queued
                 try await database.save(entry); try await reload()
-                return
+                return false
             }
             activity = "正在识别账单…"
-            let result = try await AIClient(configuration: configuration).extract(ocrText: text)
+            let result = try await extractBill(configuration, text)
             entry.extraction = result; entry.state = .needsReview; entry.model = configuration.model
             entry.promptVersion = LedgerSystemPrompt.version
             let stored = try await database.save(entry); try await reload()
@@ -267,27 +295,56 @@ enum LedgerSection: String, CaseIterable, Identifiable {
         } catch {
             entry.state = .failed; entry.error = error.localizedDescription
             do { try await database.save(entry); try await reload() }
-            catch { banner = "识别结果保存失败，请检查磁盘空间。原图已保留。" }
+            catch {
+                queuePaused = true
+                banner = "识别队列已暂停。请检查磁盘空间后重试，原图已保留。"
+                openWindow?()
+                return false
+            }
             openWindow?()
         }
+        return true
     }
 
     func retry(_ entry: LedgerEntry) {
-        guard [.failed, .queued, .needsReview].contains(entry.state), let database else { return }
+        guard [.failed, .queued, .needsReview].contains(entry.state) || (queuePaused && entry.state == .processing),
+              let database else { return }
         Task {
             do {
-                var queued = entry; queued.state = .queued; queued.error = nil; queued.distinctFingerprint = nil
-                try await database.save(queued); try await reload()
+                var retries = [entry]
+                if queuePaused { retries += entries.filter { $0.state == .processing && $0.id != entry.id } }
+                for var queued in retries {
+                    queued.state = .queued; queued.error = nil; queued.distinctFingerprint = nil
+                    try await database.save(queued)
+                }
+                try await reload()
+                queuePaused = false
                 startOrRequestConsent()
             } catch { banner = error.localizedDescription }
         }
     }
 
+    static let defaultReviewCurrency = "CNY"
+
+    func needsCurrencyDefault(for entry: LedgerEntry) -> Bool {
+        guard entry.state == .needsReview, let extraction = entry.extraction else { return false }
+        return extraction.currency?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
+    }
+
+    func reviewDraft(for entry: LedgerEntry) -> BillExtraction {
+        var draft = entry.extraction ?? BillExtraction()
+        if needsCurrencyDefault(for: entry) { draft.currency = Self.defaultReviewCurrency }
+        return draft
+    }
+
     func confirm(_ entry: LedgerEntry, draft: BillExtraction) async -> Bool {
         guard let database, entry.state == .needsReview else { return false }
-        guard draft.decimalAmount != nil, let currency = draft.currency,
+        guard draft.decimalAmount != nil else {
+            banner = "请填写有效金额。"; return false
+        }
+        guard let currency = draft.currency,
               currency.range(of: #"^[A-Z]{3}$"#, options: .regularExpression) != nil else {
-            banner = "请填写有效金额和币种代码（如 CNY、USD）。"; return false
+            banner = "请填写三位币种代码（如 CNY、USD）。"; return false
         }
         guard !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             banner = "请填写账单名称。"; return false
@@ -299,6 +356,7 @@ enum LedgerSection: String, CaseIterable, Identifiable {
             var updated = entry; updated.extraction = draft; updated.state = .confirmed
             let stored = try await database.save(updated); try await reload()
             if stored.state != .confirmed { reportDeduplication(stored); return false }
+            banner = nil
             return true
         } catch { banner = error.localizedDescription; return false }
     }
