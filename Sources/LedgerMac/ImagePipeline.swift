@@ -10,10 +10,25 @@ public struct PreparedImage: Sendable {
     public let hash: String
 }
 
+public struct ImagePreview: Sendable {
+    public let image: CGImage
+    public let byteCount: Int
+}
+
 public enum ImagePipeline {
     public static let supportedContentTypes: [UTType] = [.png, .jpeg, .heic, .tiff]
 
     public static func prepare(url: URL, imagesDirectory: URL) throws -> PreparedImage {
+        let decoded = try decode(url: url, maxPixelSize: 4_096)
+        return try prepare(image: decoded.image, imagesDirectory: imagesDirectory)
+    }
+
+    /// Read-only validation and a small thumbnail; no ledger or image files are written.
+    public static func preview(url: URL) throws -> ImagePreview {
+        try decode(url: url, maxPixelSize: 512)
+    }
+
+    private static func decode(url: URL, maxPixelSize: Int) throws -> ImagePreview {
         guard url.isFileURL else { throw LedgerError.message("请拖入本机图片文件。") }
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
@@ -24,6 +39,7 @@ public enum ImagePipeline {
         guard let size = values.fileSize, size > 0 else { throw LedgerError.message("文件为空，请重新导出图片。") }
         guard size <= 40 * 1_024 * 1_024 else { throw LedgerError.message("图片超过 40 MB，请缩小后重新导入。") }
         let data = try Data(contentsOf: url, options: .mappedIfSafe)
+        guard data.count <= 40 * 1_024 * 1_024 else { throw LedgerError.message("图片超过 40 MB，请缩小后重新导入。") }
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let identifier = CGImageSourceGetType(source), let type = UTType(identifier as String) else {
             throw LedgerError.message("文件不是可读取的图片，可能已损坏，请重新导出。")
@@ -38,11 +54,11 @@ public enum ImagePipeline {
               let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceThumbnailMaxPixelSize: 4_096
+                kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
               ] as CFDictionary) else {
             throw LedgerError.message("图片无法解码或尺寸过大，请换一张清晰的订单截图。")
         }
-        return try prepare(image: image, imagesDirectory: imagesDirectory)
+        return ImagePreview(image: image, byteCount: data.count)
     }
 
     public static func prepare(image: CGImage, imagesDirectory: URL) throws -> PreparedImage {

@@ -37,8 +37,9 @@ enum LedgerSection: String, CaseIterable, Identifiable {
     @Published var capturePermission = ScreenCaptureService.hasPermission
     @Published var isCapturing = false
     let importBatch = ImportBatch()
+    let importSelection = ImportSelection()
     var isImporting: Bool { importBatch.isImporting }
-    private var importSubscription: AnyCancellable?
+    private var importSubscriptions = Set<AnyCancellable>()
     @Published private(set) var initialized = false
     let dataRoot: URL
     let isPreview: Bool
@@ -55,7 +56,8 @@ enum LedgerSection: String, CaseIterable, Identifiable {
         self.isPreview = isPreview
         self.reminderOnOpen = isPreview || defaults.object(forKey: "reminders.showOnOpen.v1") == nil
             ? true : defaults.bool(forKey: "reminders.showOnOpen.v1")
-        importSubscription = importBatch.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        importBatch.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &importSubscriptions)
+        importSelection.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &importSubscriptions)
     }
 
     var consentGranted: Bool { isPreview ? previewConsent : defaults.bool(forKey: "aiTextConsent.v1") }
@@ -152,6 +154,7 @@ enum LedgerSection: String, CaseIterable, Identifiable {
 
     func chooseImages() {
         guard !isImporting else { banner = "上一批文件仍在导入，请等待完成后再选择图片。"; return }
+        guard !importSelection.isPresented else { banner = "请先确认或取消当前待导入文件。"; return }
         let panel = NSOpenPanel()
         panel.title = "导入订单图片"
         panel.message = "每次最多 10 张，每张不超过 40 MB。支持 PNG、JPEG、HEIC 和 TIFF。"
@@ -166,8 +169,16 @@ enum LedgerSection: String, CaseIterable, Identifiable {
     }
 
     @discardableResult func importCandidates(_ candidates: [ImportCandidate]) -> Bool {
-        guard let database else { banner = "账本尚未就绪，请稍后重试。"; return false }
-        return importBatch.start(candidates, importFile: { [self] url in
+        guard database != nil else { banner = "账本尚未就绪，请稍后重试。"; return false }
+        guard !isImporting else { banner = "上一批文件仍在导入，此次未导入。请等待完成后再选择或拖入。"; return false }
+        return importSelection.stage(candidates)
+    }
+
+    func confirmImportSelection() {
+        guard !isImporting, let database else { banner = "账本正在忙碌，请稍后重试。"; return }
+        let candidates = importSelection.confirm()
+        guard !candidates.isEmpty else { return }
+        importBatch.start(candidates, importFile: { [self] url in
             let images = await database.imagesDirectory
             let prepared = try await Task.detached(priority: .userInitiated) {
                 try ImagePipeline.prepare(url: url, imagesDirectory: images)

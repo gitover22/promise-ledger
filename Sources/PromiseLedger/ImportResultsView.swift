@@ -9,7 +9,7 @@ struct ImportResultsView: View {
         if !batch.items.isEmpty || batch.notice != nil {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text("本次导入").font(.system(size: 15, weight: .semibold))
+                    Text(model.importSelection.isPresented ? "上次导入" : "本次导入").font(.system(size: 15, weight: .semibold))
                     if batch.isImporting { ProgressView().controlSize(.small) }
                     Spacer()
                     Text(summary).font(.system(size: 11)).foregroundStyle(Palette.secondary)
@@ -36,6 +36,10 @@ struct ImportResultsView: View {
                         Spacer()
                         if let id = item.status.entryID {
                             Button("查看记录") { model.showImportedEntry(id) }.buttonStyle(QuietButtonStyle())
+                        } else if case .failed = item.status {
+                            Button("重新选择图片") { model.chooseImages() }
+                                .buttonStyle(QuietButtonStyle())
+                                .disabled(model.isImporting || model.importSelection.isPresented)
                         }
                     }.padding(.vertical, 7)
                     if item.id != batch.items.last?.id { Divider() }

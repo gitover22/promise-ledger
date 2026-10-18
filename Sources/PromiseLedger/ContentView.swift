@@ -24,6 +24,7 @@ struct ContentView: View {
                         statistics
                         intake
                     }
+                    ImportPreviewView(selection: model.importSelection)
                     ImportResultsView(batch: model.importBatch)
                     if let banner = model.banner { bannerView(banner) }
                     if let activity = model.activity { processingView(activity) }
@@ -172,7 +173,7 @@ struct ContentView: View {
                 }.padding(21).frame(maxWidth: .infinity, minHeight: 80)
                     .background(.white.opacity(0.8), in: RoundedRectangle(cornerRadius: 13))
                     .overlay(RoundedRectangle(cornerRadius: 13).stroke(Palette.border))
-            }.buttonStyle(.plain).disabled(model.isImporting || !model.initialized)
+            }.buttonStyle(.plain).disabled(model.isImporting || model.importSelection.isPresented || !model.initialized)
         }
     }
 

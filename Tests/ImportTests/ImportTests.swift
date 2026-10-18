@@ -25,6 +25,7 @@ struct Failure: LocalizedError {
             try await mixedBatch()
             try await limitsAndBusy()
             try imageValidation()
+            try await previewWorkflow()
             print("PASS: all import tests; no model calls or user files used")
         } catch { print("FAIL: \(error.localizedDescription)"); exit(1) }
     }
